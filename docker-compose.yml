@@ -1,0 +1,225 @@
+version: '3.8'
+
+# Saan System - Development Environment
+services:
+  # Database Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: saan-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-saan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-saan_password}
+      POSTGRES_DB: ${POSTGRES_DB:-saan_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/database/migrations:/migrations
+      - ./infrastructure/database/seeds:/seeds
+    networks:
+      - saan-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saan}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: saan-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - saan-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Go Microservices
+  chat:
+    build:
+      context: ./services/chat
+      dockerfile: Dockerfile
+    container_name: saan-chat
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - PORT=8001
+      - GO_ENV=development
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./services/chat:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+
+  order:
+    build:
+      context: ./services/order
+      dockerfile: Dockerfile
+    container_name: saan-order
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - PORT=8002
+      - GO_ENV=development
+      - CHAT_SERVICE_URL=${CHAT_SERVICE_URL}
+      - INVENTORY_SERVICE_URL=${INVENTORY_SERVICE_URL}
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./services/order:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+
+  inventory:
+    build:
+      context: ./services/inventory
+      dockerfile: Dockerfile
+    container_name: saan-inventory
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - PORT=8003
+      - GO_ENV=development
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./services/inventory:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+
+  delivery:
+    build:
+      context: ./services/delivery
+      dockerfile: Dockerfile
+    container_name: saan-delivery
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - PORT=8004
+      - GO_ENV=development
+      - ORDER_SERVICE_URL=${ORDER_SERVICE_URL}
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./services/delivery:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+
+  finance:
+    build:
+      context: ./services/finance
+      dockerfile: Dockerfile
+    container_name: saan-finance
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - PORT=8005
+      - GO_ENV=development
+      - ORDER_SERVICE_URL=${ORDER_SERVICE_URL}
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./services/finance:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+
+  # Frontend Applications
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    container_name: saan-web
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_CHAT_API_URL=${NEXT_PUBLIC_CHAT_API_URL}
+      - NEXT_PUBLIC_ORDER_API_URL=${NEXT_PUBLIC_ORDER_API_URL}
+      - NEXT_PUBLIC_INVENTORY_API_URL=${NEXT_PUBLIC_INVENTORY_API_URL}
+      - NEXT_PUBLIC_DELIVERY_API_URL=${NEXT_PUBLIC_DELIVERY_API_URL}
+      - NEXT_PUBLIC_FINANCE_API_URL=${NEXT_PUBLIC_FINANCE_API_URL}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - chat
+      - order
+      - inventory
+    networks:
+      - saan-network
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile.dev
+    container_name: saan-admin
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_CHAT_API_URL=${NEXT_PUBLIC_CHAT_API_URL}
+      - NEXT_PUBLIC_ORDER_API_URL=${NEXT_PUBLIC_ORDER_API_URL}
+      - NEXT_PUBLIC_INVENTORY_API_URL=${NEXT_PUBLIC_INVENTORY_API_URL}
+      - NEXT_PUBLIC_DELIVERY_API_URL=${NEXT_PUBLIC_DELIVERY_API_URL}
+      - NEXT_PUBLIC_FINANCE_API_URL=${NEXT_PUBLIC_FINANCE_API_URL}
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./apps/admin:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - chat
+      - order
+      - inventory
+    networks:
+      - saan-network
+    restart: unless-stopped
+
+# Volumes
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# Networks
+networks:
+  saan-network:
+    driver: bridge

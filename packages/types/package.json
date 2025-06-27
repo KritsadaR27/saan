@@ -1,0 +1,26 @@
+{
+  "name": "@saan/types",
+  "version": "0.1.0",
+  "description": "Shared TypeScript types for Saan System",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "exports": {
+    ".": "./index.ts",
+    "./api": "./api.ts",
+    "./chat": "./chat.ts",
+    "./order": "./order.ts",
+    "./inventory": "./inventory.ts",
+    "./delivery": "./delivery.ts",
+    "./finance": "./finance.ts"
+  }
+}
