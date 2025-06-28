@@ -23,13 +23,22 @@ func NewPostgresOrderRepository(db *sqlx.DB) domain.OrderRepository {
 // Create creates a new order
 func (r *PostgresOrderRepository) Create(ctx context.Context, order *domain.Order) error {
 	query := `
-		INSERT INTO orders (id, customer_id, status, total_amount, shipping_address, billing_address, notes, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO orders (
+			id, customer_id, code, status, source, paid_status, total_amount, 
+			discount, shipping_fee, tax, tax_enabled, shipping_address, billing_address, 
+			payment_method, promo_code, notes, confirmed_at, cancelled_at, cancelled_reason,
+			created_at, updated_at
+		)
+		VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+		)
 	`
 	
 	_, err := r.db.ExecContext(ctx, query,
-		order.ID, order.CustomerID, order.Status, order.TotalAmount,
-		order.ShippingAddress, order.BillingAddress, order.Notes,
+		order.ID, order.CustomerID, order.Code, order.Status, order.Source, order.PaidStatus,
+		order.TotalAmount, order.Discount, order.ShippingFee, order.Tax, order.TaxEnabled,
+		order.ShippingAddress, order.BillingAddress, order.PaymentMethod, order.PromoCode,
+		order.Notes, order.ConfirmedAt, order.CancelledAt, order.CancelledReason,
 		order.CreatedAt, order.UpdatedAt,
 	)
 	
@@ -43,7 +52,10 @@ func (r *PostgresOrderRepository) Create(ctx context.Context, order *domain.Orde
 // GetByID retrieves an order by its ID
 func (r *PostgresOrderRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Order, error) {
 	query := `
-		SELECT id, customer_id, status, total_amount, shipping_address, billing_address, notes, created_at, updated_at
+		SELECT id, customer_id, code, status, source, paid_status, total_amount, 
+			   discount, shipping_fee, tax, tax_enabled, shipping_address, billing_address, 
+			   payment_method, promo_code, notes, confirmed_at, cancelled_at, cancelled_reason,
+			   created_at, updated_at
 		FROM orders
 		WHERE id = $1
 	`
@@ -63,7 +75,10 @@ func (r *PostgresOrderRepository) GetByID(ctx context.Context, id uuid.UUID) (*d
 // GetByCustomerID retrieves all orders for a customer
 func (r *PostgresOrderRepository) GetByCustomerID(ctx context.Context, customerID uuid.UUID) ([]*domain.Order, error) {
 	query := `
-		SELECT id, customer_id, status, total_amount, shipping_address, billing_address, notes, created_at, updated_at
+		SELECT id, customer_id, code, status, source, paid_status, total_amount, 
+			   discount, shipping_fee, tax, tax_enabled, shipping_address, billing_address, 
+			   payment_method, promo_code, notes, confirmed_at, cancelled_at, cancelled_reason,
+			   created_at, updated_at
 		FROM orders
 		WHERE customer_id = $1
 		ORDER BY created_at DESC
@@ -82,14 +97,18 @@ func (r *PostgresOrderRepository) GetByCustomerID(ctx context.Context, customerI
 func (r *PostgresOrderRepository) Update(ctx context.Context, order *domain.Order) error {
 	query := `
 		UPDATE orders
-		SET customer_id = $2, status = $3, total_amount = $4, shipping_address = $5, 
-		    billing_address = $6, notes = $7, updated_at = $8
+		SET customer_id = $2, code = $3, status = $4, source = $5, paid_status = $6,
+		    total_amount = $7, discount = $8, shipping_fee = $9, tax = $10, tax_enabled = $11,
+		    shipping_address = $12, billing_address = $13, payment_method = $14, promo_code = $15,
+		    notes = $16, confirmed_at = $17, cancelled_at = $18, cancelled_reason = $19, updated_at = $20
 		WHERE id = $1
 	`
 	
 	result, err := r.db.ExecContext(ctx, query,
-		order.ID, order.CustomerID, order.Status, order.TotalAmount,
-		order.ShippingAddress, order.BillingAddress, order.Notes, order.UpdatedAt,
+		order.ID, order.CustomerID, order.Code, order.Status, order.Source, order.PaidStatus,
+		order.TotalAmount, order.Discount, order.ShippingFee, order.Tax, order.TaxEnabled,
+		order.ShippingAddress, order.BillingAddress, order.PaymentMethod, order.PromoCode,
+		order.Notes, order.ConfirmedAt, order.CancelledAt, order.CancelledReason, order.UpdatedAt,
 	)
 	
 	if err != nil {
@@ -132,7 +151,10 @@ func (r *PostgresOrderRepository) Delete(ctx context.Context, id uuid.UUID) erro
 // List retrieves orders with pagination
 func (r *PostgresOrderRepository) List(ctx context.Context, limit, offset int) ([]*domain.Order, error) {
 	query := `
-		SELECT id, customer_id, status, total_amount, shipping_address, billing_address, notes, created_at, updated_at
+		SELECT id, customer_id, code, status, source, paid_status, total_amount, 
+			   discount, shipping_fee, tax, tax_enabled, shipping_address, billing_address, 
+			   payment_method, promo_code, notes, confirmed_at, cancelled_at, cancelled_reason,
+			   created_at, updated_at
 		FROM orders
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
@@ -150,7 +172,10 @@ func (r *PostgresOrderRepository) List(ctx context.Context, limit, offset int) (
 // GetByStatus retrieves orders by status
 func (r *PostgresOrderRepository) GetByStatus(ctx context.Context, status domain.OrderStatus) ([]*domain.Order, error) {
 	query := `
-		SELECT id, customer_id, status, total_amount, shipping_address, billing_address, notes, created_at, updated_at
+		SELECT id, customer_id, code, status, source, paid_status, total_amount, 
+			   discount, shipping_fee, tax, tax_enabled, shipping_address, billing_address, 
+			   payment_method, promo_code, notes, confirmed_at, cancelled_at, cancelled_reason,
+			   created_at, updated_at
 		FROM orders
 		WHERE status = $1
 		ORDER BY created_at DESC

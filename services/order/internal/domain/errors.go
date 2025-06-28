@@ -15,6 +15,7 @@ var (
 	ErrInvalidOrderItemData  = errors.New("invalid order item data")
 	ErrInvalidQuantity       = errors.New("invalid quantity")
 	ErrInvalidPrice          = errors.New("invalid price")
+	ErrInvalidAmount         = errors.New("invalid amount")
 	
 	// Customer errors
 	ErrInvalidCustomerID = errors.New("invalid customer ID")
