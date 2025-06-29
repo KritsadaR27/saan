@@ -12,6 +12,7 @@ import (
 	"github.com/saan/order-service/internal/application"
 	"github.com/saan/order-service/internal/infrastructure/config"
 	"github.com/saan/order-service/internal/infrastructure/db"
+	"github.com/saan/order-service/internal/infrastructure/event"
 	"github.com/saan/order-service/internal/infrastructure/repository"
 	httpTransport "github.com/saan/order-service/internal/transport/http"
 	"github.com/saan/order-service/pkg/logger"
@@ -36,9 +37,28 @@ func main() {
 	// Initialize repositories
 	orderRepo := repository.NewPostgresOrderRepository(database)
 	orderItemRepo := repository.NewPostgresOrderItemRepository(database)
+	auditRepo := repository.NewPostgresAuditRepository(database)
+	orderEventRepo := repository.NewPostgresEventRepository(database)
+	
+	// Initialize event publisher (Kafka)
+	kafkaBrokers := []string{"kafka:9092"} // Use service name as per PROJECT_RULES.md
+	eventPublisher, err := event.NewKafkaEventPublisher(kafkaBrokers, "order-events")
+	if err != nil {
+		log.Fatalf("Failed to create event publisher: %v", err)
+	}
+	defer eventPublisher.Close()
+	
+	// Initialize outbox worker
+	outboxConfig := event.DefaultOutboxWorkerConfig()
+	outboxWorker := event.NewOutboxWorker(orderEventRepo, eventPublisher, outboxConfig, log)
+	
+	// Start outbox worker
+	ctx := context.Background()
+	outboxWorker.Start(ctx)
+	defer outboxWorker.Stop()
 	
 	// Initialize services
-	orderService := application.NewOrderService(orderRepo, orderItemRepo)
+	orderService := application.NewOrderService(orderRepo, orderItemRepo, auditRepo, orderEventRepo, eventPublisher, log)
 	
 	// Initialize handlers
 	orderHandler := httpTransport.NewOrderHandler(orderService, log)

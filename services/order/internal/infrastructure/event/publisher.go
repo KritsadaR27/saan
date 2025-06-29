@@ -12,8 +12,8 @@ import (
 
 // EventPublisher defines the interface for publishing events
 type EventPublisher interface {
-	// Publish publishes an event to the message broker
-	Publish(ctx context.Context, event *domain.OrderEvent) error
+	// PublishEvent publishes an event to the message broker
+	PublishEvent(ctx context.Context, event *domain.OrderEvent) error
 	
 	// Close closes the publisher and releases resources
 	Close() error
@@ -47,8 +47,8 @@ func NewKafkaEventPublisher(brokers []string, topic string) (*KafkaEventPublishe
 	}, nil
 }
 
-// Publish publishes an event to Kafka
-func (p *KafkaEventPublisher) Publish(ctx context.Context, event *domain.OrderEvent) error {
+// PublishEvent publishes an event to Kafka
+func (p *KafkaEventPublisher) PublishEvent(ctx context.Context, event *domain.OrderEvent) error {
 	// Convert event to JSON
 	eventData, err := json.Marshal(event)
 	if err != nil {

@@ -6,19 +6,35 @@ import (
 	"github.com/google/uuid"
 	"github.com/saan/order-service/internal/domain"
 	"github.com/saan/order-service/internal/application/dto"
+	"github.com/saan/order-service/pkg/logger"
 )
 
 // OrderService provides business logic for order operations
 type OrderService struct {
-	orderRepo     domain.OrderRepository
-	orderItemRepo domain.OrderItemRepository
+	orderRepo      domain.OrderRepository
+	orderItemRepo  domain.OrderItemRepository
+	auditRepo      domain.AuditRepository
+	eventRepo      domain.OrderEventRepository
+	eventPublisher domain.EventPublisher
+	logger         logger.Logger
 }
 
 // NewOrderService creates a new order service instance
-func NewOrderService(orderRepo domain.OrderRepository, orderItemRepo domain.OrderItemRepository) *OrderService {
+func NewOrderService(
+	orderRepo domain.OrderRepository,
+	orderItemRepo domain.OrderItemRepository,
+	auditRepo domain.AuditRepository,
+	eventRepo domain.OrderEventRepository,
+	eventPublisher domain.EventPublisher,
+	logger logger.Logger,
+) *OrderService {
 	return &OrderService{
-		orderRepo:     orderRepo,
-		orderItemRepo: orderItemRepo,
+		orderRepo:      orderRepo,
+		orderItemRepo:  orderItemRepo,
+		auditRepo:      auditRepo,
+		eventRepo:      eventRepo,
+		eventPublisher: eventPublisher,
+		logger:         logger,
 	}
 }
 
@@ -34,16 +50,48 @@ func (s *OrderService) CreateOrder(ctx context.Context, req *dto.CreateOrderRequ
 	
 	// Save order to repository
 	if err := s.orderRepo.Create(ctx, order); err != nil {
+		s.logger.Error("Failed to create order", "error", err, "customer_id", req.CustomerID)
 		return nil, err
 	}
 	
 	// Save order items
 	for _, item := range order.Items {
 		if err := s.orderItemRepo.Create(ctx, &item); err != nil {
+			s.logger.Error("Failed to create order item", "error", err, "order_id", order.ID)
 			return nil, err
 		}
 	}
 	
+	// Create audit log entry
+	auditDetails := map[string]interface{}{
+		"customer_id":       order.CustomerID,
+		"total_amount":      order.TotalAmount,
+		"shipping_address":  order.ShippingAddress,
+		"billing_address":   order.BillingAddress,
+		"items_count":       len(order.Items),
+	}
+	auditLog := domain.NewAuditLog(order.ID, nil, domain.AuditActionCreate, auditDetails)
+	if err := s.auditRepo.Create(ctx, auditLog); err != nil {
+		s.logger.Warn("Failed to create audit log", "error", err, "order_id", order.ID)
+		// Continue - audit failure shouldn't break order creation
+	}
+	
+	// Create and store event for outbox pattern
+	eventPayload := map[string]interface{}{
+		"order_id":         order.ID,
+		"customer_id":      order.CustomerID,
+		"total_amount":     order.TotalAmount,
+		"status":          order.Status,
+		"shipping_address": order.ShippingAddress,
+		"created_at":      order.CreatedAt,
+	}
+	event := domain.NewOrderEvent(order.ID, domain.EventTypeOrderCreated, eventPayload)
+	if err := s.eventRepo.Create(ctx, event); err != nil {
+		s.logger.Error("Failed to create order event", "error", err, "order_id", order.ID)
+		// Continue - event failure shouldn't break order creation
+	}
+	
+	s.logger.Info("Order created successfully", "order_id", order.ID, "customer_id", req.CustomerID)
 	return dto.ToOrderResponse(order), nil
 }
 
@@ -103,20 +151,57 @@ func (s *OrderService) UpdateOrder(ctx context.Context, id uuid.UUID, req *dto.U
 		return nil, domain.ErrOrderCannotBeModified
 	}
 	
+	// Track changes for audit
+	changes := make(map[string]interface{})
+	
 	// Update fields if provided
-	if req.ShippingAddress != nil {
+	if req.ShippingAddress != nil && *req.ShippingAddress != order.ShippingAddress {
+		changes["shipping_address"] = map[string]string{
+			"old": order.ShippingAddress,
+			"new": *req.ShippingAddress,
+		}
 		order.ShippingAddress = *req.ShippingAddress
 	}
-	if req.BillingAddress != nil {
+	if req.BillingAddress != nil && *req.BillingAddress != order.BillingAddress {
+		changes["billing_address"] = map[string]string{
+			"old": order.BillingAddress,
+			"new": *req.BillingAddress,
+		}
 		order.BillingAddress = *req.BillingAddress
 	}
-	if req.Notes != nil {
+	if req.Notes != nil && *req.Notes != order.Notes {
+		changes["notes"] = map[string]string{
+			"old": order.Notes,
+			"new": *req.Notes,
+		}
 		order.Notes = *req.Notes
 	}
 	
 	// Save updated order
 	if err := s.orderRepo.Update(ctx, order); err != nil {
+		s.logger.Error("Failed to update order", "error", err, "order_id", id)
 		return nil, err
+	}
+	
+	// Create audit log entry if there were changes
+	if len(changes) > 0 {
+		auditLog := domain.NewAuditLog(order.ID, nil, domain.AuditActionUpdate, changes)
+		if err := s.auditRepo.Create(ctx, auditLog); err != nil {
+			s.logger.Warn("Failed to create audit log", "error", err, "order_id", order.ID)
+		}
+		
+		// Create and store event for outbox pattern
+		eventPayload := map[string]interface{}{
+			"order_id":   order.ID,
+			"changes":    changes,
+			"updated_at": order.UpdatedAt,
+		}
+		event := domain.NewOrderEvent(order.ID, domain.EventTypeOrderUpdated, eventPayload)
+		if err := s.eventRepo.Create(ctx, event); err != nil {
+			s.logger.Error("Failed to create order update event", "error", err, "order_id", order.ID)
+		}
+		
+		s.logger.Info("Order updated successfully", "order_id", order.ID, "changes", len(changes))
 	}
 	
 	return dto.ToOrderResponse(order), nil
@@ -129,6 +214,8 @@ func (s *OrderService) UpdateOrderStatus(ctx context.Context, id uuid.UUID, req 
 		return nil, err
 	}
 	
+	oldStatus := order.Status
+	
 	// Update status with validation
 	if err := order.UpdateStatus(req.Status); err != nil {
 		return nil, err
@@ -136,9 +223,50 @@ func (s *OrderService) UpdateOrderStatus(ctx context.Context, id uuid.UUID, req 
 	
 	// Save updated order
 	if err := s.orderRepo.Update(ctx, order); err != nil {
+		s.logger.Error("Failed to update order status", "error", err, "order_id", id)
 		return nil, err
 	}
 	
+	// Create audit log entry
+	auditDetails := map[string]interface{}{
+		"old_status": oldStatus,
+		"new_status": order.Status,
+		"updated_by": "system", // TODO: Get from context
+	}
+	auditLog := domain.NewAuditLog(order.ID, nil, domain.AuditActionStatusChange, auditDetails)
+	if err := s.auditRepo.Create(ctx, auditLog); err != nil {
+		s.logger.Warn("Failed to create audit log", "error", err, "order_id", order.ID)
+	}
+	
+	// Determine event type based on new status
+	var eventType domain.EventType
+	switch order.Status {
+	case domain.OrderStatusConfirmed:
+		eventType = domain.EventTypeOrderConfirmed
+	case domain.OrderStatusShipped:
+		eventType = domain.EventTypeOrderShipped
+	case domain.OrderStatusDelivered:
+		eventType = domain.EventTypeOrderDelivered
+	case domain.OrderStatusCancelled:
+		eventType = domain.EventTypeOrderCancelled
+	default:
+		eventType = domain.EventTypeOrderUpdated
+	}
+	
+	// Create and store event for outbox pattern
+	eventPayload := map[string]interface{}{
+		"order_id":    order.ID,
+		"customer_id": order.CustomerID,
+		"old_status":  oldStatus,
+		"new_status":  order.Status,
+		"updated_at":  order.UpdatedAt,
+	}
+	event := domain.NewOrderEvent(order.ID, eventType, eventPayload)
+	if err := s.eventRepo.Create(ctx, event); err != nil {
+		s.logger.Error("Failed to create order status change event", "error", err, "order_id", order.ID)
+	}
+	
+	s.logger.Info("Order status updated", "order_id", order.ID, "old_status", oldStatus, "new_status", order.Status)
 	return dto.ToOrderResponse(order), nil
 }
 
@@ -154,7 +282,26 @@ func (s *OrderService) DeleteOrder(ctx context.Context, id uuid.UUID) error {
 		return domain.ErrOrderCannotBeModified
 	}
 	
-	return s.orderRepo.Delete(ctx, id)
+	// Create audit log entry before deletion
+	auditDetails := map[string]interface{}{
+		"deleted_order": map[string]interface{}{
+			"customer_id":    order.CustomerID,
+			"status":         order.Status,
+			"total_amount":   order.TotalAmount,
+		},
+	}
+	auditLog := domain.NewAuditLog(order.ID, nil, domain.AuditActionCancel, auditDetails)
+	if err := s.auditRepo.Create(ctx, auditLog); err != nil {
+		s.logger.Warn("Failed to create audit log for deletion", "error", err, "order_id", order.ID)
+	}
+	
+	if err := s.orderRepo.Delete(ctx, id); err != nil {
+		s.logger.Error("Failed to delete order", "error", err, "order_id", id)
+		return err
+	}
+	
+	s.logger.Info("Order deleted successfully", "order_id", id)
+	return nil
 }
 
 // ListOrders retrieves orders with pagination

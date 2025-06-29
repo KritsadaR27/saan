@@ -36,7 +36,7 @@ func DefaultOutboxWorkerConfig() OutboxWorkerConfig {
 // OutboxWorker is a background worker that processes events from the outbox table
 type OutboxWorker struct {
 	eventRepo     domain.OrderEventRepository // Use the concrete interface instead of alias
-	publisher     EventPublisher
+	publisher     domain.EventPublisher
 	config        OutboxWorkerConfig
 	stopChan      chan struct{}
 	logger        logger.Logger // Use the interface instead of pointer
@@ -45,7 +45,7 @@ type OutboxWorker struct {
 // NewOutboxWorker creates a new outbox worker
 func NewOutboxWorker(
 	eventRepo domain.OrderEventRepository,
-	publisher EventPublisher,
+	publisher domain.EventPublisher,
 	config OutboxWorkerConfig,
 	logger logger.Logger,
 ) *OutboxWorker {
@@ -137,7 +137,7 @@ func (w *OutboxWorker) processEvent(ctx context.Context, event *domain.OrderEven
 	}
 
 	// Try to publish the event
-	err := w.publisher.Publish(ctx, event)
+	err := w.publisher.PublishEvent(ctx, event)
 	if err != nil {
 		eventLogger.WithField("error", err.Error()).Error("Failed to publish event")
 		

@@ -92,3 +92,6 @@ type OrderEventRepository interface {
 
 // EventRepository is an alias for OrderEventRepository to match the task specification
 type EventRepository = OrderEventRepository
+
+// AuditRepository is an alias for OrderAuditRepository to match the task specification
+type AuditRepository = OrderAuditRepository

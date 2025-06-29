@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -11,11 +12,11 @@ import (
 type AuditAction string
 
 const (
-	AuditActionCreate       AuditAction = "CREATE"
-	AuditActionUpdate       AuditAction = "UPDATE"
-	AuditActionStatusChange AuditAction = "CHANGE_STATUS"
+	AuditActionCreate        AuditAction = "CREATE"
+	AuditActionUpdate        AuditAction = "UPDATE"
+	AuditActionStatusChange  AuditAction = "CHANGE_STATUS"
 	AuditActionOverrideStock AuditAction = "OVERRIDE_STOCK"
-	AuditActionCancel       AuditAction = "CANCEL"
+	AuditActionCancel        AuditAction = "CANCEL"
 )
 
 // OrderAuditLog represents an audit log entry for order changes
@@ -131,3 +132,8 @@ func (e *OrderEventOutbox) SetPayloadFromJSON(data []byte) error {
 
 // OrderEvent is an alias for OrderEventOutbox to match the task specification
 type OrderEvent = OrderEventOutbox
+
+// EventPublisher defines the interface for publishing events
+type EventPublisher interface {
+	PublishEvent(ctx context.Context, event *OrderEvent) error
+}
