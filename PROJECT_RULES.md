@@ -17,15 +17,15 @@
 | Admin Dashboard     | Internal admin panel               | 3010      | admin                |
 | Chatbot Service     | AI / Rule-based reply engine       | 8090      | chatbot              |
 | Webhook Listener    | Facebook / LINE webhook endpoint   | 8091      | webhook              |
-| Order Service       | Manages all order logic            | 8081      | order-service        |
-| Inventory Service   | Manages stock and warehouse        | 8082      | inventory-service    |
-| Product Service     | Catalog / SKU management           | 8083      | product-service      |
-| Sale Service        | Sale entry & revenue API           | 8084      | sale-service         |
-| Finance Service     | Profit / accounting                | 8085      | finance-service      |
-| Shipping Service    | Delivery & routing logic           | 8086      | shipping-service     |
-| Payment Service     | Payment verification & QR          | 8087      | payment-service      |
-| User Service        | Customer profile & member system   | 8088      | user-service         |
-| Reporting Service   | Analytics & dashboard data         | 8089      | reporting-service    |
+| Order Service       | Manages all order logic            | 8081      | order     |
+| Inventory Service   | Manages stock and warehouse        | 8082      | inventory |
+| Product Service     | Catalog / SKU management           | 8083      | product   |
+| Sale Service        | Sale entry & revenue API           | 8084      | sale      |
+| Finance Service     | Profit / accounting                | 8085      | finance   |
+| Shipping Service    | Delivery & routing logic           | 8086      | shipping  |
+| Payment Service     | Payment verification & QR          | 8087      | payment   |
+| User Service        | Customer profile & member system   | 8088      | user      |
+| Reporting Service   | Analytics & dashboard data         | 8089      | reporting |
 | Notification Service| LINE, FB, Email push notifications | 8092      | notification-service |
 | PostgreSQL Database | Shared relational database         | 5532      | postgres             |
 | Kafka (Message Bus) | Event queue system                 | 9092      | kafka                |

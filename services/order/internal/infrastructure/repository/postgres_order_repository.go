@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -190,6 +191,53 @@ func (r *PostgresOrderRepository) GetByStatus(ctx context.Context, status domain
 	return orders, nil
 }
 
+// GetOrdersByDateRange retrieves orders within a date range
+func (r *PostgresOrderRepository) GetOrdersByDateRange(ctx context.Context, startDate, endDate time.Time) ([]*domain.Order, error) {
+	query := `
+		SELECT 
+			id, customer_id, code, status, source, paid_status, total_amount, 
+			discount, shipping_fee, tax, tax_enabled, shipping_address, billing_address, 
+			payment_method, promo_code, notes, confirmed_at, cancelled_at, cancelled_reason,
+			created_at, updated_at
+		FROM orders 
+		WHERE created_at >= $1 AND created_at < $2
+		ORDER BY created_at ASC
+	`
+	
+	rows, err := r.db.QueryContext(ctx, query, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get orders by date range: %w", err)
+	}
+	defer rows.Close()
+
+	var orders []*domain.Order
+	for rows.Next() {
+		order := &domain.Order{}
+		err := rows.Scan(
+			&order.ID, &order.CustomerID, &order.Code, &order.Status, &order.Source, &order.PaidStatus,
+			&order.TotalAmount, &order.Discount, &order.ShippingFee, &order.Tax, &order.TaxEnabled,
+			&order.ShippingAddress, &order.BillingAddress, &order.PaymentMethod, &order.PromoCode,
+			&order.Notes, &order.ConfirmedAt, &order.CancelledAt, &order.CancelledReason,
+			&order.CreatedAt, &order.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan order: %w", err)
+		}
+		orders = append(orders, order)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating orders: %w", err)
+	}
+
+	return orders, nil
+}
+
+// GetOrdersByCustomer retrieves all orders for a customer (alias for GetByCustomerID)
+func (r *PostgresOrderRepository) GetOrdersByCustomer(ctx context.Context, customerID uuid.UUID) ([]*domain.Order, error) {
+	return r.GetByCustomerID(ctx, customerID)
+}
+
 // PostgresOrderItemRepository implements the OrderItemRepository interface
 type PostgresOrderItemRepository struct {
 	db *sqlx.DB
@@ -285,4 +333,40 @@ func (r *PostgresOrderItemRepository) Delete(ctx context.Context, id uuid.UUID) 
 	}
 	
 	return nil
+}
+
+// GetAllOrderItems retrieves all order items (for statistics)
+func (r *PostgresOrderItemRepository) GetAllOrderItems(ctx context.Context) ([]*domain.OrderItem, error) {
+	query := `
+		SELECT id, order_id, product_id, quantity, unit_price, total_price, 
+		       is_override, override_reason, created_at, updated_at
+		FROM order_items
+		ORDER BY created_at ASC
+	`
+	
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all order items: %w", err)
+	}
+	defer rows.Close()
+
+	var items []*domain.OrderItem
+	for rows.Next() {
+		item := &domain.OrderItem{}
+		err := rows.Scan(
+			&item.ID, &item.OrderID, &item.ProductID, &item.Quantity,
+			&item.UnitPrice, &item.TotalPrice, &item.IsOverride, &item.OverrideReason,
+			&item.CreatedAt, &item.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan order item: %w", err)
+		}
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating order items: %w", err)
+	}
+
+	return items, nil
 }

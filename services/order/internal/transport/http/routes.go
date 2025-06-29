@@ -7,7 +7,7 @@ import (
 )
 
 // SetupRoutes sets up all HTTP routes
-func SetupRoutes(orderHandler *OrderHandler, chatOrderHandler *ChatOrderHandler, authConfig *middleware.AuthConfig, logger logger.Logger) *gin.Engine {
+func SetupRoutes(orderHandler *OrderHandler, chatOrderHandler *ChatOrderHandler, statsHandler *StatsHandler, authConfig *middleware.AuthConfig, logger logger.Logger) *gin.Engine {
 	// Set Gin mode
 	gin.SetMode(gin.ReleaseMode)
 	
@@ -68,6 +68,19 @@ func SetupRoutes(orderHandler *OrderHandler, chatOrderHandler *ChatOrderHandler,
 				orders.POST("/:id/link-chat", middleware.RequirePermission(authConfig, "admin:link_chat"), orderHandler.LinkOrderToChat)
 				orders.POST("/bulk-status", middleware.RequirePermission(authConfig, "admin:bulk_update"), orderHandler.BulkUpdateOrderStatus)
 				orders.GET("/export", middleware.RequirePermission(authConfig, "admin:export"), orderHandler.ExportOrders)
+			}
+		}
+		
+		// Statistics routes (require at least manager role)
+		if statsHandler != nil {
+			stats := v1.Group("/stats")
+			stats.Use(middleware.RequireRole(authConfig, middleware.RoleManager, middleware.RoleAdmin))
+			{
+				stats.GET("/daily", statsHandler.GetDailyStats)
+				stats.GET("/monthly", statsHandler.GetMonthlyStats)
+				stats.GET("/top-products", statsHandler.GetTopProducts)
+				stats.GET("/customer/:customer_id", statsHandler.GetCustomerStats)
+				stats.GET("/overview", statsHandler.GetOverallStats)
 			}
 		}
 	}

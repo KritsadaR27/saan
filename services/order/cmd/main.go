@@ -48,12 +48,8 @@ func main() {
 	customerClient := client.NewHTTPCustomerClient("http://user-service:8088") 
 	notificationClient := client.NewHTTPNotificationClient("http://notification-service:8092")
 	
-	// Initialize event publisher (Kafka)
-	kafkaBrokers := []string{"kafka:9092"} // Use service name as per PROJECT_RULES.md
-	eventPublisher, err := event.NewKafkaEventPublisher(kafkaBrokers, "order-events")
-	if err != nil {
-		log.Fatalf("Failed to create event publisher: %v", err)
-	}
+	// Initialize event publisher (Mock for development)
+	eventPublisher := event.NewMockEventPublisher()
 	defer eventPublisher.Close()
 	
 	// Initialize outbox worker
@@ -67,6 +63,9 @@ func main() {
 	
 	// Initialize services
 	orderService := application.NewOrderService(orderRepo, orderItemRepo, auditRepo, orderEventRepo, eventPublisher, log)
+	
+	// Initialize statistics service
+	statsService := application.NewOrderStatsService(orderRepo, orderItemRepo, log)
 	
 	// Initialize template selector for chat integration
 	templateSelector := template.NewTemplateSelector()
@@ -84,6 +83,7 @@ func main() {
 	// Initialize handlers
 	orderHandler := httpTransport.NewOrderHandler(orderService, log)
 	chatOrderHandler := httpTransport.NewChatOrderHandler(chatOrderService, log)
+	statsHandler := httpTransport.NewStatsHandler(statsService, log)
 	
 	// Initialize auth config
 	authConfig := &middleware.AuthConfig{
@@ -93,7 +93,7 @@ func main() {
 	}
 	
 	// Setup routes with auth config
-	router := httpTransport.SetupRoutes(orderHandler, chatOrderHandler, authConfig, log)
+	router := httpTransport.SetupRoutes(orderHandler, chatOrderHandler, statsHandler, authConfig, log)
 	
 	// Create HTTP server
 	server := &http.Server{

@@ -14,7 +14,7 @@ import (
 type OrderService struct {
 	orderRepo      domain.OrderRepository
 	orderItemRepo  domain.OrderItemRepository
-	auditRepo      domain.AuditRepository
+	auditRepo      domain.OrderAuditRepository
 	eventRepo      domain.OrderEventRepository
 	eventPublisher domain.EventPublisher
 	logger         logger.Logger
@@ -24,7 +24,7 @@ type OrderService struct {
 func NewOrderService(
 	orderRepo domain.OrderRepository,
 	orderItemRepo domain.OrderItemRepository,
-	auditRepo domain.AuditRepository,
+	auditRepo domain.OrderAuditRepository,
 	eventRepo domain.OrderEventRepository,
 	eventPublisher domain.EventPublisher,
 	logger logger.Logger,
