@@ -10,6 +10,7 @@ type Config struct {
 	Database DatabaseConfig `json:"database"`
 	Server   ServerConfig   `json:"server"`
 	Logger   LoggerConfig   `json:"logger"`
+	JWT      JWTConfig      `json:"jwt"`
 }
 
 // DatabaseConfig holds database configuration
@@ -34,6 +35,11 @@ type LoggerConfig struct {
 	Format string `json:"format"`
 }
 
+// JWTConfig holds JWT configuration
+type JWTConfig struct {
+	Secret string `json:"secret"`
+}
+
 // LoadConfig loads configuration from environment variables
 func LoadConfig() *Config {
 	return &Config{
@@ -52,6 +58,9 @@ func LoadConfig() *Config {
 		Logger: LoggerConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),
 			Format: getEnv("LOG_FORMAT", "json"),
+		},
+		JWT: JWTConfig{
+			Secret: getEnv("JWT_SECRET", "default-secret-key-for-development"),
 		},
 	}
 }

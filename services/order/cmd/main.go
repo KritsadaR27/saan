@@ -17,6 +17,7 @@ import (
 	"github.com/saan/order-service/internal/infrastructure/event"
 	"github.com/saan/order-service/internal/infrastructure/repository"
 	httpTransport "github.com/saan/order-service/internal/transport/http"
+	"github.com/saan/order-service/internal/transport/http/middleware"
 	"github.com/saan/order-service/pkg/logger"
 )
 
@@ -84,8 +85,15 @@ func main() {
 	orderHandler := httpTransport.NewOrderHandler(orderService, log)
 	chatOrderHandler := httpTransport.NewChatOrderHandler(chatOrderService, log)
 	
-	// Setup routes
-	router := httpTransport.SetupRoutes(orderHandler, chatOrderHandler, log)
+	// Initialize auth config
+	authConfig := &middleware.AuthConfig{
+		AuthServiceURL: "http://user-service:8088", // Following PROJECT_RULES.md service names
+		JWTSecret:      cfg.JWT.Secret,
+		Logger:         log,
+	}
+	
+	// Setup routes with auth config
+	router := httpTransport.SetupRoutes(orderHandler, chatOrderHandler, authConfig, log)
 	
 	// Create HTTP server
 	server := &http.Server{
