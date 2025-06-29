@@ -102,13 +102,15 @@ type OrderResponse struct {
 
 // OrderItemResponse represents an order item in the response
 type OrderItemResponse struct {
-	ID         uuid.UUID `json:"id"`
-	ProductID  uuid.UUID `json:"product_id"`
-	Quantity   int       `json:"quantity"`
-	UnitPrice  float64   `json:"unit_price"`
-	TotalPrice float64   `json:"total_price"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID             uuid.UUID `json:"id"`
+	ProductID      uuid.UUID `json:"product_id"`
+	Quantity       int       `json:"quantity"`
+	UnitPrice      float64   `json:"unit_price"`
+	TotalPrice     float64   `json:"total_price"`
+	IsOverride     bool      `json:"is_override"`
+	OverrideReason *string   `json:"override_reason,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // OrderListResponse represents a paginated list of orders
@@ -141,6 +143,20 @@ type EventResponse struct {
 	RetryCount int                    `json:"retry_count"`
 }
 
+// ConfirmOrderWithStockOverrideRequest represents the request to confirm an order with stock override
+type ConfirmOrderWithStockOverrideRequest struct {
+	UserID         uuid.UUID                    `json:"user_id" validate:"required"` // User performing the override
+	UserRole       string                      `json:"user_role" validate:"required"` // User role for permission check
+	OverrideItems  []StockOverrideItem         `json:"override_items" validate:"required,min=1"`
+}
+
+// StockOverrideItem represents an item that needs stock override
+type StockOverrideItem struct {
+	ProductID      uuid.UUID `json:"product_id" validate:"required"`
+	Quantity       int       `json:"quantity" validate:"required,min=1"`
+	OverrideReason string    `json:"override_reason" validate:"required"`
+}
+
 // ToOrderResponse converts a domain order to response DTO
 func ToOrderResponse(order *domain.Order) *OrderResponse {
 	response := &OrderResponse{
@@ -170,13 +186,15 @@ func ToOrderResponse(order *domain.Order) *OrderResponse {
 	
 	for i, item := range order.Items {
 		response.Items[i] = OrderItemResponse{
-			ID:         item.ID,
-			ProductID:  item.ProductID,
-			Quantity:   item.Quantity,
-			UnitPrice:  item.UnitPrice,
-			TotalPrice: item.TotalPrice,
-			CreatedAt:  item.CreatedAt,
-			UpdatedAt:  item.UpdatedAt,
+			ID:             item.ID,
+			ProductID:      item.ProductID,
+			Quantity:       item.Quantity,
+			UnitPrice:      item.UnitPrice,
+			TotalPrice:     item.TotalPrice,
+			IsOverride:     item.IsOverride,
+			OverrideReason: item.OverrideReason,
+			CreatedAt:      item.CreatedAt,
+			UpdatedAt:      item.UpdatedAt,
 		}
 	}
 	

@@ -7,7 +7,7 @@ import (
 )
 
 // SetupRoutes sets up all HTTP routes
-func SetupRoutes(orderHandler *OrderHandler, logger logger.Logger) *gin.Engine {
+func SetupRoutes(orderHandler *OrderHandler, chatOrderHandler *ChatOrderHandler, logger logger.Logger) *gin.Engine {
 	// Set Gin mode
 	gin.SetMode(gin.ReleaseMode)
 	
@@ -34,6 +34,7 @@ func SetupRoutes(orderHandler *OrderHandler, logger logger.Logger) *gin.Engine {
 			orders.PUT("/:id", orderHandler.UpdateOrder)
 			orders.DELETE("/:id", orderHandler.DeleteOrder)
 			orders.PATCH("/:id/status", orderHandler.UpdateOrderStatus)
+			orders.POST("/:id/confirm-with-override", orderHandler.ConfirmOrderWithStockOverride)
 			orders.GET("/status/:status", orderHandler.GetOrdersByStatus)
 		}
 		
@@ -41,6 +42,17 @@ func SetupRoutes(orderHandler *OrderHandler, logger logger.Logger) *gin.Engine {
 		customers := v1.Group("/customers")
 		{
 			customers.GET("/:customerId/orders", orderHandler.GetOrdersByCustomer)
+		}
+		
+		// Chat-based order routes
+		if chatOrderHandler != nil {
+			chat := v1.Group("/chat")
+			{
+				chat.POST("/orders", chatOrderHandler.CreateOrderFromChat)
+				chat.POST("/orders/:id/confirm", chatOrderHandler.ConfirmChatOrder)
+				chat.POST("/orders/:id/cancel", chatOrderHandler.CancelChatOrder)
+				chat.POST("/orders/:id/summary", chatOrderHandler.GenerateOrderSummary)
+			}
 		}
 	}
 	

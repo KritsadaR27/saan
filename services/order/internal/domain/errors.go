@@ -9,6 +9,8 @@ var (
 	ErrInvalidOrderData        = errors.New("invalid order data")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
 	ErrOrderCannotBeModified   = errors.New("order cannot be modified in current status")
+	ErrInvalidOrderStatus      = errors.New("invalid order status for this operation")
+	ErrUnauthorizedStockOverride = errors.New("unauthorized to perform stock override")
 	
 	// Order item errors
 	ErrOrderItemNotFound     = errors.New("order item not found")

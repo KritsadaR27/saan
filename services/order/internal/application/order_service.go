@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/saan/order-service/internal/domain"
@@ -354,4 +355,126 @@ func (s *OrderService) GetOrdersByStatus(ctx context.Context, status domain.Orde
 	}
 	
 	return dto.ToOrderResponseList(orders), nil
+}
+
+// ConfirmOrderWithStockOverride confirms an order with stock override capability
+// This method is used when there's insufficient stock but the operation is authorized by a manager/admin
+func (s *OrderService) ConfirmOrderWithStockOverride(ctx context.Context, orderID uuid.UUID, req *dto.ConfirmOrderWithStockOverrideRequest) (*dto.OrderResponse, error) {
+	// Permission check - only managers and admins can override stock
+	if !s.hasStockOverridePermission(req.UserRole) {
+		s.logger.Warn("Unauthorized stock override attempt", "user_id", req.UserID, "user_role", req.UserRole, "order_id", orderID)
+		return nil, domain.ErrUnauthorizedStockOverride
+	}
+
+	// Get the order
+	order, err := s.orderRepo.GetByID(ctx, orderID)
+	if err != nil {
+		s.logger.Error("Failed to get order for stock override", "order_id", orderID, "error", err)
+		return nil, err
+	}
+
+	// Verify order is in pending status
+	if order.Status != domain.OrderStatusPending {
+		s.logger.Warn("Attempted to override stock for non-pending order", "order_id", orderID, "status", order.Status)
+		return nil, domain.ErrInvalidOrderStatus
+	}
+
+	// Process stock overrides
+	for _, overrideItem := range req.OverrideItems {
+		// Find the corresponding order item
+		itemFound := false
+		for i, item := range order.Items {
+			if item.ProductID == overrideItem.ProductID && item.Quantity == overrideItem.Quantity {
+				// Mark item as override
+				order.Items[i].IsOverride = true
+				reason := overrideItem.OverrideReason
+				order.Items[i].OverrideReason = &reason
+				order.Items[i].UpdatedAt = time.Now()
+				itemFound = true
+				break
+			}
+		}
+		
+		if !itemFound {
+			s.logger.Error("Override item not found in order", "order_id", orderID, "product_id", overrideItem.ProductID)
+			return nil, domain.ErrOrderItemNotFound
+		}
+	}
+
+	// Update order status to confirmed
+	order.Status = domain.OrderStatusConfirmed
+	now := time.Now()
+	order.ConfirmedAt = &now
+	order.UpdatedAt = now
+
+	// Save the updated order
+	if err := s.orderRepo.Update(ctx, order); err != nil {
+		s.logger.Error("Failed to update order with stock override", "order_id", orderID, "error", err)
+		return nil, err
+	}
+
+	// Update order items with override information
+	for _, item := range order.Items {
+		if item.IsOverride {
+			if err := s.orderItemRepo.Update(ctx, &item); err != nil {
+				s.logger.Error("Failed to update order item with override", "item_id", item.ID, "error", err)
+				return nil, err
+			}
+		}
+	}
+
+	// Create audit log for stock override
+	userIDStr := req.UserID.String()
+	auditLog := domain.NewAuditLog(
+		orderID,
+		&userIDStr,
+		domain.AuditActionOverrideStock,
+		map[string]interface{}{
+			"user_role":      req.UserRole,
+			"override_items": req.OverrideItems,
+			"previous_status": "pending",
+			"new_status":     "confirmed",
+		},
+	)
+
+	if err := s.auditRepo.Create(ctx, auditLog); err != nil {
+		s.logger.Error("Failed to create audit log for stock override", "order_id", orderID, "error", err)
+		// Don't fail the operation for audit log failure
+	}
+
+	// Create event for stock override
+	eventData := map[string]interface{}{
+		"order_id":       orderID,
+		"user_id":        req.UserID,
+		"user_role":      req.UserRole,
+		"override_items": req.OverrideItems,
+		"timestamp":      now,
+	}
+
+	event := domain.NewOrderEvent(orderID, "order.stock_override", eventData)
+	if err := s.eventRepo.Create(ctx, event); err != nil {
+		s.logger.Error("Failed to create stock override event", "order_id", orderID, "error", err)
+		// Don't fail the operation for event failure
+	}
+
+	// Publish event
+	if err := s.eventPublisher.PublishEvent(ctx, event); err != nil {
+		s.logger.Error("Failed to publish stock override event", "order_id", orderID, "error", err)
+		// Don't fail the operation for publish failure
+	}
+
+	s.logger.Info("Order confirmed with stock override", "order_id", orderID, "user_id", req.UserID, "override_items_count", len(req.OverrideItems))
+
+	return dto.ToOrderResponse(order), nil
+}
+
+// hasStockOverridePermission checks if the user role has permission to override stock
+func (s *OrderService) hasStockOverridePermission(userRole string) bool {
+	allowedRoles := []string{"manager", "admin", "supervisor"}
+	for _, role := range allowedRoles {
+		if userRole == role {
+			return true
+		}
+	}
+	return false
 }

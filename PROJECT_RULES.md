@@ -1,4 +1,4 @@
- 🛠 SAAN PROJECT RULES
+🛠 SAAN PROJECT RULES
 ## ❌ DO NOT:
 - Run services directly with go run or npm run dev
 - Install dependencies on your host machine

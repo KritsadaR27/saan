@@ -54,14 +54,16 @@ const (
 
 // OrderItem represents an item in an order
 type OrderItem struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	OrderID     uuid.UUID `json:"order_id" db:"order_id"`
-	ProductID   uuid.UUID `json:"product_id" db:"product_id"`
-	Quantity    int       `json:"quantity" db:"quantity"`
-	UnitPrice   float64   `json:"unit_price" db:"unit_price"`
-	TotalPrice  float64   `json:"total_price" db:"total_price"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	ID             uuid.UUID `json:"id" db:"id"`
+	OrderID        uuid.UUID `json:"order_id" db:"order_id"`
+	ProductID      uuid.UUID `json:"product_id" db:"product_id"`
+	Quantity       int       `json:"quantity" db:"quantity"`
+	UnitPrice      float64   `json:"unit_price" db:"unit_price"`
+	TotalPrice     float64   `json:"total_price" db:"total_price"`
+	IsOverride     bool      `json:"is_override" db:"is_override"`
+	OverrideReason *string   `json:"override_reason,omitempty" db:"override_reason"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // Order represents an order in the system
@@ -124,6 +126,26 @@ func (o *Order) AddItem(productID uuid.UUID, quantity int, unitPrice float64) {
 		TotalPrice: float64(quantity) * unitPrice,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
+	}
+	
+	o.Items = append(o.Items, item)
+	o.CalculateTotal()
+	o.UpdatedAt = time.Now()
+}
+
+// AddItemWithOverride adds an item to the order with stock override capability
+func (o *Order) AddItemWithOverride(productID uuid.UUID, quantity int, unitPrice float64, isOverride bool, overrideReason *string) {
+	item := OrderItem{
+		ID:             uuid.New(),
+		OrderID:        o.ID,
+		ProductID:      productID,
+		Quantity:       quantity,
+		UnitPrice:      unitPrice,
+		TotalPrice:     float64(quantity) * unitPrice,
+		IsOverride:     isOverride,
+		OverrideReason: overrideReason,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
 	}
 	
 	o.Items = append(o.Items, item)

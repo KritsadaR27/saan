@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/saan/order-service/internal/application"
+	"github.com/saan/order-service/internal/application/template"
+	"github.com/saan/order-service/internal/infrastructure/client"
 	"github.com/saan/order-service/internal/infrastructure/config"
 	"github.com/saan/order-service/internal/infrastructure/db"
 	"github.com/saan/order-service/internal/infrastructure/event"
@@ -40,6 +42,11 @@ func main() {
 	auditRepo := repository.NewPostgresAuditRepository(database)
 	orderEventRepo := repository.NewPostgresEventRepository(database)
 	
+	// Initialize HTTP clients (following PROJECT_RULES.md service names)
+	inventoryClient := client.NewHTTPInventoryClient("http://inventory-service:8082")
+	customerClient := client.NewHTTPCustomerClient("http://user-service:8088") 
+	notificationClient := client.NewHTTPNotificationClient("http://notification-service:8092")
+	
 	// Initialize event publisher (Kafka)
 	kafkaBrokers := []string{"kafka:9092"} // Use service name as per PROJECT_RULES.md
 	eventPublisher, err := event.NewKafkaEventPublisher(kafkaBrokers, "order-events")
@@ -60,11 +67,25 @@ func main() {
 	// Initialize services
 	orderService := application.NewOrderService(orderRepo, orderItemRepo, auditRepo, orderEventRepo, eventPublisher, log)
 	
+	// Initialize template selector for chat integration
+	templateSelector := template.NewTemplateSelector()
+	
+	// Initialize chat order service
+	chatOrderService := application.NewChatOrderService(
+		orderService,
+		customerClient,
+		inventoryClient,
+		notificationClient,
+		templateSelector,
+		log,
+	)
+	
 	// Initialize handlers
 	orderHandler := httpTransport.NewOrderHandler(orderService, log)
+	chatOrderHandler := httpTransport.NewChatOrderHandler(chatOrderService, log)
 	
 	// Setup routes
-	router := httpTransport.SetupRoutes(orderHandler, log)
+	router := httpTransport.SetupRoutes(orderHandler, chatOrderHandler, log)
 	
 	// Create HTTP server
 	server := &http.Server{

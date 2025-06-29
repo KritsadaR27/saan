@@ -265,6 +265,53 @@ func (h *OrderHandler) GetOrdersByStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"orders": orders})
 }
 
+// ConfirmOrderWithStockOverride handles POST /orders/{id}/confirm-with-override
+func (h *OrderHandler) ConfirmOrderWithStockOverride(c *gin.Context) {
+	orderIDStr := c.Param("id")
+	orderID, err := uuid.Parse(orderIDStr)
+	if err != nil {
+		h.logger.Error("Invalid order ID format", "order_id", orderIDStr, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid order ID format"})
+		return
+	}
+
+	var req dto.ConfirmOrderWithStockOverrideRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.logger.Error("Failed to bind JSON for stock override", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	if err := h.validator.Struct(&req); err != nil {
+		h.logger.Error("Stock override request validation failed", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Validation failed", "details": err.Error()})
+		return
+	}
+
+	order, err := h.orderService.ConfirmOrderWithStockOverride(c.Request.Context(), orderID, &req)
+	if err != nil {
+		h.logger.Error("Failed to confirm order with stock override", "order_id", orderID, "error", err)
+
+		// Handle specific error cases
+		switch err {
+		case domain.ErrUnauthorizedStockOverride:
+			c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized to perform stock override"})
+		case domain.ErrInvalidOrderStatus:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Order status is not valid for stock override"})
+		case domain.ErrOrderNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		case domain.ErrOrderItemNotFound:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "One or more order items not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to confirm order with stock override"})
+		}
+		return
+	}
+
+	h.logger.Info("Order confirmed with stock override", "order_id", orderID, "user_id", req.UserID)
+	c.JSON(http.StatusOK, gin.H{"data": order})
+}
+
 // HealthCheck handles GET /health
 func (h *OrderHandler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
