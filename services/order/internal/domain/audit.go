@@ -57,12 +57,14 @@ const (
 type EventType string
 
 const (
-	EventTypeOrderCreated      EventType = "order_created"
+	EventTypeOrderCreated      EventType = "OrderCreated"
+	EventTypeOrderConfirmed    EventType = "OrderConfirmed"
+	EventTypeOrderReady        EventType = "OrderReady"
+	EventTypeOrderDelivered    EventType = "OrderDelivered"
+	EventTypeOrderPaid         EventType = "OrderPaid"
+	EventTypeOrderCancelled    EventType = "OrderCancelled"
 	EventTypeOrderUpdated      EventType = "order_updated"
-	EventTypeOrderConfirmed    EventType = "order_confirmed"
-	EventTypeOrderCancelled    EventType = "order_cancelled"
 	EventTypeOrderShipped      EventType = "order_shipped"
-	EventTypeOrderDelivered    EventType = "order_delivered"
 	EventTypeOrderRefunded     EventType = "order_refunded"
 	EventTypePaymentUpdated    EventType = "payment_updated"
 	EventTypeInventoryReserved EventType = "inventory_reserved"
@@ -126,3 +128,6 @@ func (e *OrderEventOutbox) GetPayloadAsJSON() ([]byte, error) {
 func (e *OrderEventOutbox) SetPayloadFromJSON(data []byte) error {
 	return json.Unmarshal(data, &e.Payload)
 }
+
+// OrderEvent is an alias for OrderEventOutbox to match the task specification
+type OrderEvent = OrderEventOutbox

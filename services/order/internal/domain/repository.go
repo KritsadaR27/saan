@@ -89,3 +89,6 @@ type OrderEventRepository interface {
 	// Delete removes old processed events (for cleanup)
 	Delete(ctx context.Context, eventID uuid.UUID) error
 }
+
+// EventRepository is an alias for OrderEventRepository to match the task specification
+type EventRepository = OrderEventRepository
