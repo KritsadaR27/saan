@@ -1,4 +1,4 @@
-// integrations/loyverse/internal/sync/employee_sync.go
+// integrations/loyverse/internal/sync/category_sync.go
 package sync
 
 import (
@@ -14,15 +14,15 @@ import (
 	"integrations/loyverse/internal/models"
 )
 
-type EmployeeSync struct {
+type CategorySync struct {
 	client      *connector.Client
 	publisher   *events.Publisher
 	redis       *redis.Client
 	transformer *events.Transformer
 }
 
-func NewEmployeeSync(client *connector.Client, publisher *events.Publisher, redis *redis.Client) *EmployeeSync {
-	return &EmployeeSync{
+func NewCategorySync(client *connector.Client, publisher *events.Publisher, redis *redis.Client) *CategorySync {
+	return &CategorySync{
 		client:      client,
 		publisher:   publisher,
 		redis:       redis,
@@ -30,44 +30,44 @@ func NewEmployeeSync(client *connector.Client, publisher *events.Publisher, redi
 	}
 }
 
-func (s *EmployeeSync) Sync(ctx context.Context) error {
-	log.Println("Starting employee sync...")
+func (s *CategorySync) Sync(ctx context.Context) error {
+	log.Println("Starting category sync...")
 	
 	// Get last sync time
-	lastSyncKey := "loyverse:sync:employee:last"
+	lastSyncKey := "loyverse:sync:category:last"
 	lastSync, _ := s.redis.Get(ctx, lastSyncKey).Result()
 	
-	// Fetch employees
-	rawData, err := s.client.GetEmployees(ctx)
+	// Fetch categories
+	rawData, err := s.client.GetCategories(ctx)
 	if err != nil {
-		return fmt.Errorf("fetching employees: %w", err)
+		return fmt.Errorf("fetching categories: %w", err)
 	}
 	
 	var domainEvents []events.DomainEvent
 	processedCount := 0
 	
 	for _, raw := range rawData {
-		var employee models.Employee
-		if err := json.Unmarshal(raw, &employee); err != nil {
-			log.Printf("Error unmarshaling employee: %v", err)
+		var category models.Category
+		if err := json.Unmarshal(raw, &category); err != nil {
+			log.Printf("Error unmarshaling category: %v", err)
 			continue
 		}
 		
 		// Skip if not updated since last sync
 		if lastSync != "" {
 			lastSyncTime, _ := time.Parse(time.RFC3339, lastSync)
-			if employee.UpdatedAt.Before(lastSyncTime) {
+			if category.UpdatedAt.Before(lastSyncTime) {
 				continue
 			}
 		}
 		
 		// Create domain event
-		event := s.createEmployeeEvent(employee)
+		event := s.createCategoryEvent(category)
 		domainEvents = append(domainEvents, event)
 		processedCount++
 		
-		// Cache employee data
-		cacheKey := fmt.Sprintf("loyverse:employee:%s", employee.ID)
+		// Cache category data
+		cacheKey := fmt.Sprintf("loyverse:category:%s", category.ID)
 		s.redis.Set(ctx, cacheKey, raw, 24*time.Hour)
 	}
 	
@@ -81,29 +81,26 @@ func (s *EmployeeSync) Sync(ctx context.Context) error {
 	// Update last sync time
 	s.redis.Set(ctx, lastSyncKey, time.Now().Format(time.RFC3339), 0)
 	
-	log.Printf("Employee sync completed. Processed %d employees", processedCount)
+	log.Printf("Category sync completed. Processed %d categories", processedCount)
 	return nil
 }
 
-func (s *EmployeeSync) createEmployeeEvent(employee models.Employee) events.DomainEvent {
+func (s *CategorySync) createCategoryEvent(category models.Category) events.DomainEvent {
 	eventData := map[string]interface{}{
-		"employee_id": employee.ID,
-		"name":        employee.Name,
-		"email":       employee.Email,
-		"phone":       employee.Phone,
-		"store_id":    employee.StoreID,
-		"roles":       employee.Roles,
-		"is_owner":    employee.IsOwner,
+		"category_id": category.ID,
+		"name":        category.Name,
+		"color":       category.Color,
+		"parent_id":   category.ParentID,
 		"source":      "loyverse",
 	}
 	
 	data, _ := json.Marshal(eventData)
 	
 	return events.DomainEvent{
-		ID:            fmt.Sprintf("emp-%s-%d", employee.ID, time.Now().Unix()),
-		Type:          events.EventEmployeeUpdated,
-		AggregateID:   employee.ID,
-		AggregateType: "employee",
+		ID:            fmt.Sprintf("cat-%s-%d", category.ID, time.Now().Unix()),
+		Type:          events.EventCategoryUpdated,
+		AggregateID:   category.ID,
+		AggregateType: "category",
 		Timestamp:     time.Now(),
 		Version:       1,
 		Data:          data,

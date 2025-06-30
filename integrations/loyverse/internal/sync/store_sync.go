@@ -1,4 +1,4 @@
-// integrations/loyverse/internal/sync/employee_sync.go
+// integrations/loyverse/internal/sync/store_sync.go
 package sync
 
 import (
@@ -14,15 +14,15 @@ import (
 	"integrations/loyverse/internal/models"
 )
 
-type EmployeeSync struct {
+type StoreSync struct {
 	client      *connector.Client
 	publisher   *events.Publisher
 	redis       *redis.Client
 	transformer *events.Transformer
 }
 
-func NewEmployeeSync(client *connector.Client, publisher *events.Publisher, redis *redis.Client) *EmployeeSync {
-	return &EmployeeSync{
+func NewStoreSync(client *connector.Client, publisher *events.Publisher, redis *redis.Client) *StoreSync {
+	return &StoreSync{
 		client:      client,
 		publisher:   publisher,
 		redis:       redis,
@@ -30,44 +30,44 @@ func NewEmployeeSync(client *connector.Client, publisher *events.Publisher, redi
 	}
 }
 
-func (s *EmployeeSync) Sync(ctx context.Context) error {
-	log.Println("Starting employee sync...")
+func (s *StoreSync) Sync(ctx context.Context) error {
+	log.Println("Starting store sync...")
 	
 	// Get last sync time
-	lastSyncKey := "loyverse:sync:employee:last"
+	lastSyncKey := "loyverse:sync:store:last"
 	lastSync, _ := s.redis.Get(ctx, lastSyncKey).Result()
 	
-	// Fetch employees
-	rawData, err := s.client.GetEmployees(ctx)
+	// Fetch stores
+	rawData, err := s.client.GetStores(ctx)
 	if err != nil {
-		return fmt.Errorf("fetching employees: %w", err)
+		return fmt.Errorf("fetching stores: %w", err)
 	}
 	
 	var domainEvents []events.DomainEvent
 	processedCount := 0
 	
 	for _, raw := range rawData {
-		var employee models.Employee
-		if err := json.Unmarshal(raw, &employee); err != nil {
-			log.Printf("Error unmarshaling employee: %v", err)
+		var store models.Store
+		if err := json.Unmarshal(raw, &store); err != nil {
+			log.Printf("Error unmarshaling store: %v", err)
 			continue
 		}
 		
 		// Skip if not updated since last sync
 		if lastSync != "" {
 			lastSyncTime, _ := time.Parse(time.RFC3339, lastSync)
-			if employee.UpdatedAt.Before(lastSyncTime) {
+			if store.UpdatedAt.Before(lastSyncTime) {
 				continue
 			}
 		}
 		
 		// Create domain event
-		event := s.createEmployeeEvent(employee)
+		event := s.createStoreEvent(store)
 		domainEvents = append(domainEvents, event)
 		processedCount++
 		
-		// Cache employee data
-		cacheKey := fmt.Sprintf("loyverse:employee:%s", employee.ID)
+		// Cache store data
+		cacheKey := fmt.Sprintf("loyverse:store:%s", store.ID)
 		s.redis.Set(ctx, cacheKey, raw, 24*time.Hour)
 	}
 	
@@ -81,29 +81,30 @@ func (s *EmployeeSync) Sync(ctx context.Context) error {
 	// Update last sync time
 	s.redis.Set(ctx, lastSyncKey, time.Now().Format(time.RFC3339), 0)
 	
-	log.Printf("Employee sync completed. Processed %d employees", processedCount)
+	log.Printf("Store sync completed. Processed %d stores", processedCount)
 	return nil
 }
 
-func (s *EmployeeSync) createEmployeeEvent(employee models.Employee) events.DomainEvent {
+func (s *StoreSync) createStoreEvent(store models.Store) events.DomainEvent {
 	eventData := map[string]interface{}{
-		"employee_id": employee.ID,
-		"name":        employee.Name,
-		"email":       employee.Email,
-		"phone":       employee.Phone,
-		"store_id":    employee.StoreID,
-		"roles":       employee.Roles,
-		"is_owner":    employee.IsOwner,
-		"source":      "loyverse",
+		"store_id":       store.ID,
+		"name":           store.Name,
+		"address":        store.Address,
+		"phone":          store.Phone,
+		"email":          store.Email,
+		"description":    store.Description,
+		"receipt_footer": store.ReceiptFooter,
+		"tax_number":     store.TaxNumber,
+		"source":         "loyverse",
 	}
 	
 	data, _ := json.Marshal(eventData)
 	
 	return events.DomainEvent{
-		ID:            fmt.Sprintf("emp-%s-%d", employee.ID, time.Now().Unix()),
-		Type:          events.EventEmployeeUpdated,
-		AggregateID:   employee.ID,
-		AggregateType: "employee",
+		ID:            fmt.Sprintf("store-%s-%d", store.ID, time.Now().Unix()),
+		Type:          events.EventStoreUpdated,
+		AggregateID:   store.ID,
+		AggregateType: "store",
 		Timestamp:     time.Now(),
 		Version:       1,
 		Data:          data,
