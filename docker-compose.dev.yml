@@ -1,0 +1,99 @@
+version: '3.8'
+
+# Saan System - Development Environment (Simplified)
+services:
+  # Database Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: saan-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-saan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-saan_password}
+      POSTGRES_DB: ${POSTGRES_DB:-saan_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/database/migrations:/migrations
+      - ./infrastructure/database/seeds:/seeds
+    networks:
+      - saan-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saan}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: saan-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - saan-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Order Service (The completed service)
+  order:
+    build:
+      context: ./services/order
+      dockerfile: Dockerfile
+    container_name: saan-order
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - JWT_SECRET=development-secret-key
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    services:
+  loyverse-integration:
+    build: .
+    container_name: loyverse-integration
+    environment:
+      - LOYVERSE_API_TOKEN=${LOYVERSE_API_TOKEN}
+      - LOYVERSE_WEBHOOK_SECRET=${LOYVERSE_WEBHOOK_SECRET}
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=loyverse-events
+      - PORT=8083
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - TZ=Asia/Bangkok
+    ports:
+      - "8083:8083"
+    depends_on:
+      - redis
+      - kafka
+    networks:
+      - saan-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+
+networks:
+  saan-network:
+    driver: bridge

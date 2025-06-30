@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Saan System - Development Environment
 services:
   # Database Services
@@ -39,6 +37,42 @@ services:
       timeout: 5s
       retries: 5
 
+  # Message Bus
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - saan-network
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    container_name: kafka
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ADVERTISED_PORT: 9092
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - saan-network
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--zookeeper", "zookeeper:2181", "--list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   # Go Microservices
   order:
     build:
@@ -71,11 +105,43 @@ services:
       - saan-network
     restart: unless-stopped
 
+  # Integrations
+  loyverse:
+    build:
+      context: ./integrations/loyverse
+      dockerfile: Dockerfile
+    container_name: loyverse-integration
+    env_file:
+      - .env.local
+    environment:
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=loyverse-events
+      - PORT=8091
+      - TZ=Asia/Bangkok
+      - LOYVERSE_WEBHOOK_SECRET=
+    ports:
+      - "8091:8091"
+    volumes:
+      - ./integrations/loyverse:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+
 # Volumes
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  kafka_data:
     driver: local
 
 # Networks
