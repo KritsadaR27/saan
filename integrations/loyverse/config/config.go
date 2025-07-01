@@ -12,7 +12,6 @@ import (
 type Config struct {
 	// Loyverse API
 	LoyverseAPIToken string
-	WebhookSecret    string
 
 	// Redis
 	RedisAddr     string
@@ -40,7 +39,6 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		// Loyverse
 		LoyverseAPIToken: getEnv("LOYVERSE_API_TOKEN", ""),
-		WebhookSecret:    getEnv("LOYVERSE_WEBHOOK_SECRET", ""),
 
 		// Redis
 		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
@@ -57,8 +55,8 @@ func Load() (*Config, error) {
 		ReceiptSyncInterval:   getEnv("RECEIPT_SYNC_INTERVAL", "*/5 * * * *"),
 		CustomerSyncInterval:  getEnv("CUSTOMER_SYNC_INTERVAL", "0 * * * *"),
 
-		// Server
-		Port:       getEnvInt("PORT", 8083),
+		// Server (note: webhook service now uses port 8093)
+		Port:       getEnvInt("PORT", 8084),
 		AdminToken: getEnv("ADMIN_TOKEN", ""),
 		TimeZone:   getEnv("TZ", "Asia/Bangkok"),
 	}

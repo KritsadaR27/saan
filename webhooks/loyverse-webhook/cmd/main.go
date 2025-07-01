@@ -16,7 +16,6 @@ import (
 
 	"webhooks/loyverse-webhook/internal/handler"
 	"webhooks/loyverse-webhook/internal/processor"
-	"webhooks/loyverse-webhook/internal/validator"
 )
 
 func main() {
@@ -53,15 +52,14 @@ func main() {
 	defer kafkaWriter.Close()
 
 	// Initialize components
-	validator := validator.NewLoyverseValidator(webhookSecret)
-	processor := processor.NewLoyverseProcessor(kafkaWriter, redisClient)
-	webhookHandler := handler.NewLoyverseHandler(validator, processor)
+	processor := processor.NewProcessor(redisClient)
+	webhookHandler := handler.NewHandler(webhookSecret, processor, kafkaWriter)
 
 	// Setup routes
 	router := mux.NewRouter()
 	
 	// Webhook endpoints
-	router.HandleFunc("/webhook/loyverse", webhookHandler.HandleWebhook).Methods("POST")
+	router.Handle("/webhook/loyverse", webhookHandler).Methods("POST")
 	router.HandleFunc("/health", healthCheckHandler).Methods("GET")
 	router.HandleFunc("/ready", readinessHandler(redisClient, kafkaWriter)).Methods("GET")
 

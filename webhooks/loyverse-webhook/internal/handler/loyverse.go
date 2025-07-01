@@ -3,34 +3,50 @@ package handler
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/segmentio/kafka-go"
 	"webhooks/loyverse-webhook/internal/processor"
-	"webhooks/loyverse-webhook/internal/validator"
 )
 
-// LoyverseHandler handles HTTP requests for Loyverse webhooks
-type LoyverseHandler struct {
-	validator *validator.LoyverseValidator
-	processor *processor.LoyverseProcessor
+// Handler handles Loyverse webhooks
+type Handler struct {
+	secret      string
+	processor   *processor.Processor
+	kafkaWriter *kafka.Writer
 }
 
-// NewLoyverseHandler creates a new Loyverse webhook handler
-func NewLoyverseHandler(validator *validator.LoyverseValidator, processor *processor.LoyverseProcessor) *LoyverseHandler {
-	return &LoyverseHandler{
-		validator: validator,
-		processor: processor,
+// NewHandler creates a new webhook handler
+func NewHandler(secret string, processor *processor.Processor, kafkaWriter *kafka.Writer) *Handler {
+	return &Handler{
+		secret:      secret,
+		processor:   processor,
+		kafkaWriter: kafkaWriter,
 	}
 }
 
-// HandleWebhook handles incoming Loyverse webhook requests
-func (h *LoyverseHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
-	// Log request for debugging
-	log.Printf("Received Loyverse webhook from %s", r.RemoteAddr)
+// WebhookPayload represents Loyverse webhook payload
+type WebhookPayload struct {
+	Type      string          `json:"type"`
+	CreatedAt time.Time       `json:"created_at"`
+	Data      json.RawMessage `json:"data"`
+}
 
-	// Read request body
+// ServeHTTP implements http.Handler
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Read body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("Error reading webhook body: %v", err)
@@ -39,18 +55,20 @@ func (h *LoyverseHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 	defer r.Body.Close()
 
-	// Validate signature
-	signature := r.Header.Get("X-Loyverse-Signature")
-	if !h.validator.ValidateSignature(body, signature) {
-		log.Printf("Invalid webhook signature from %s", r.RemoteAddr)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+	// Verify signature if secret is configured
+	if h.secret != "" {
+		signature := r.Header.Get("X-Loyverse-Signature")
+		if !h.verifySignature(body, signature) {
+			log.Println("Invalid webhook signature")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 	}
 
-	// Validate payload structure
-	payload, err := h.validator.ValidatePayload(body)
-	if err != nil {
-		log.Printf("Invalid webhook payload: %v", err)
+	// Parse payload
+	var payload WebhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		log.Printf("Error parsing webhook payload: %v", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -58,16 +76,60 @@ func (h *LoyverseHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) 
 	// Process webhook asynchronously
 	go func() {
 		ctx := context.Background()
-		if err := h.processor.ProcessWebhook(ctx, payload); err != nil {
+		if err := h.processWebhook(ctx, payload); err != nil {
 			log.Printf("Error processing webhook: %v", err)
-			// Note: We don't return error to client as webhook is already accepted
 		}
 	}()
 
-	// Return success immediately (async processing pattern)
+	// Return success immediately
 	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status":"accepted","message":"Webhook received and queued for processing"}`))
+	w.Write([]byte("OK"))
+}
 
-	log.Printf("Webhook accepted: type=%s", payload.Type)
+// verifySignature verifies the webhook signature
+func (h *Handler) verifySignature(body []byte, signature string) bool {
+	mac := hmac.New(sha256.New, []byte(h.secret))
+	mac.Write(body)
+	expectedSignature := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(signature), []byte(expectedSignature))
+}
+
+// processWebhook processes the webhook payload
+func (h *Handler) processWebhook(ctx context.Context, payload WebhookPayload) error {
+	log.Printf("Processing webhook: type=%s", payload.Type)
+
+	// Generate event ID for deduplication
+	eventID := h.generateEventID(payload)
+	
+	// Process with deduplication
+	if err := h.processor.ProcessEvent(ctx, eventID, payload.Type, payload.Data); err != nil {
+		return err
+	}
+
+	// Publish to Kafka
+	return h.publishToKafka(ctx, payload)
+}
+
+// generateEventID generates a unique event ID for deduplication
+func (h *Handler) generateEventID(payload WebhookPayload) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(payload.Type))
+	hasher.Write([]byte(payload.CreatedAt.Format(time.RFC3339)))
+	hasher.Write(payload.Data)
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// publishToKafka publishes the webhook event to Kafka
+func (h *Handler) publishToKafka(ctx context.Context, payload WebhookPayload) error {
+	message := kafka.Message{
+		Key:   []byte(payload.Type),
+		Value: payload.Data,
+		Headers: []kafka.Header{
+			{Key: "source", Value: []byte("loyverse")},
+			{Key: "type", Value: []byte(payload.Type)},
+			{Key: "timestamp", Value: []byte(payload.CreatedAt.Format(time.RFC3339))},
+		},
+	}
+
+	return h.kafkaWriter.WriteMessages(ctx, message)
 }

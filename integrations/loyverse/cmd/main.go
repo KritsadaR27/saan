@@ -19,7 +19,6 @@ import (
 	"integrations/loyverse/internal/connector"
 	"integrations/loyverse/internal/events"
 	"integrations/loyverse/internal/sync"
-	"integrations/loyverse/internal/webhook"
 )
 
 func main() {
@@ -84,11 +83,7 @@ func main() {
 	}
 	defer syncManager.Stop()
 
-	// Initialize webhook handler
-	webhookProcessor := webhook.NewProcessor(redisClient)
-	webhookHandler := webhook.NewHandler(cfg.WebhookSecret, webhookProcessor, publisher)
-
-	// Setup HTTP server
+	// Setup HTTP server for admin endpoints only
 	router := mux.NewRouter()
 
 	// Health check endpoint
@@ -97,9 +92,6 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{"status":"healthy","service":"loyverse-integration","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
 	}).Methods("GET")
-
-	// Webhook endpoint
-	router.Handle("/webhook/loyverse", webhookHandler).Methods("POST")
 
 	// Admin endpoints
 	adminRouter := router.PathPrefix("/admin").Subrouter()
