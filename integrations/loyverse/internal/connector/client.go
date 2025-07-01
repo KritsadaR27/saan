@@ -68,254 +68,10 @@ func (c *Client) Request(ctx context.Context, method, endpoint string, body io.R
 	return respBody, nil
 }
 
-// GetReceipts retrieves all receipts with proper pagination
-func (c *Client) GetReceipts(ctx context.Context) ([]json.RawMessage, error) {
-	var allReceipts []json.RawMessage
+// GetWithPagination handles paginated GET requests
+func (c *Client) GetWithPagination(ctx context.Context, endpoint string, limit int) ([]json.RawMessage, error) {
+	var allResults []json.RawMessage
 	cursor := ""
-	limit := 250
-
-	for {
-		url := fmt.Sprintf("/receipts?limit=%d", limit)
-		if cursor != "" {
-			url += "&cursor=" + cursor
-		}
-
-		body, err := c.Request(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		var response struct {
-			Receipts []json.RawMessage `json:"receipts"`
-			Cursor   string            `json:"cursor"`
-		}
-
-		if err := json.Unmarshal(body, &response); err != nil {
-			return nil, fmt.Errorf("parsing receipts response: %w", err)
-		}
-
-		allReceipts = append(allReceipts, response.Receipts...)
-
-		if response.Cursor == "" {
-			break
-		}
-		cursor = response.Cursor
-	}
-
-	return allReceipts, nil
-}
-
-// GetInventoryLevels retrieves all inventory levels with proper pagination
-func (c *Client) GetInventoryLevels(ctx context.Context) ([]json.RawMessage, error) {
-	var allInventory []json.RawMessage
-	cursor := ""
-	limit := 250
-
-	for {
-		url := fmt.Sprintf("/inventory?limit=%d", limit)
-		if cursor != "" {
-			url += "&cursor=" + cursor
-		}
-
-		body, err := c.Request(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		var response struct {
-			InventoryLevels []json.RawMessage `json:"inventory_levels"`
-			Cursor          string            `json:"cursor"`
-		}
-
-		if err := json.Unmarshal(body, &response); err != nil {
-			return nil, fmt.Errorf("parsing inventory response: %w", err)
-		}
-
-		allInventory = append(allInventory, response.InventoryLevels...)
-
-		if response.Cursor == "" {
-			break
-		}
-		cursor = response.Cursor
-	}
-
-	return allInventory, nil
-}
-
-// GetProducts retrieves all products with proper pagination
-func (c *Client) GetProducts(ctx context.Context) ([]json.RawMessage, error) {
-	var allItems []json.RawMessage
-	cursor := ""
-	limit := 250
-
-	for {
-		url := fmt.Sprintf("/items?limit=%d", limit)
-		if cursor != "" {
-			url += "&cursor=" + cursor
-		}
-
-		body, err := c.Request(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		var response struct {
-			Items  []json.RawMessage `json:"items"`
-			Cursor string            `json:"cursor"`
-		}
-
-		if err := json.Unmarshal(body, &response); err != nil {
-			return nil, fmt.Errorf("parsing items response: %w", err)
-		}
-
-		allItems = append(allItems, response.Items...)
-
-		if response.Cursor == "" {
-			break
-		}
-		cursor = response.Cursor
-	}
-
-	return allItems, nil
-}
-
-// GetCustomers retrieves all customers with proper pagination
-func (c *Client) GetCustomers(ctx context.Context) ([]json.RawMessage, error) {
-	var allCustomers []json.RawMessage
-	cursor := ""
-	limit := 250
-
-	for {
-		url := fmt.Sprintf("/customers?limit=%d", limit)
-		if cursor != "" {
-			url += "&cursor=" + cursor
-		}
-
-		body, err := c.Request(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		var response struct {
-			Customers []json.RawMessage `json:"customers"`
-			Cursor    string            `json:"cursor"`
-		}
-
-		if err := json.Unmarshal(body, &response); err != nil {
-			return nil, fmt.Errorf("parsing customers response: %w", err)
-		}
-
-		allCustomers = append(allCustomers, response.Customers...)
-
-		if response.Cursor == "" {
-			break
-		}
-		cursor = response.Cursor
-	}
-
-	return allCustomers, nil
-}
-
-// GetStores retrieves all stores
-func (c *Client) GetStores(ctx context.Context) ([]json.RawMessage, error) {
-	var allStores []json.RawMessage
-	cursor := ""
-	limit := 250
-
-	for {
-		url := fmt.Sprintf("/stores?limit=%d", limit)
-		if cursor != "" {
-			url += "&cursor=" + cursor
-		}
-
-		body, err := c.Request(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		var response struct {
-			Stores []json.RawMessage `json:"stores"`
-			Cursor string            `json:"cursor"`
-		}
-
-		if err := json.Unmarshal(body, &response); err != nil {
-			return nil, fmt.Errorf("parsing stores response: %w", err)
-		}
-
-		allStores = append(allStores, response.Stores...)
-
-		if response.Cursor == "" {
-			break
-		}
-		cursor = response.Cursor
-	}
-
-	return allStores, nil
-}
-
-// GetEmployees retrieves all employees
-func (c *Client) GetEmployees(ctx context.Context) ([]json.RawMessage, error) {
-	var allEmployees []json.RawMessage
-	cursor := ""
-	limit := 250
-
-	for {
-		url := fmt.Sprintf("/employees?limit=%d", limit)
-		if cursor != "" {
-			url += "&cursor=" + cursor
-		}
-
-		body, err := c.Request(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		var response struct {
-			Employees []json.RawMessage `json:"employees"`
-			Cursor    string            `json:"cursor"`
-		}
-
-		if err := json.Unmarshal(body, &response); err != nil {
-			return nil, fmt.Errorf("parsing employees response: %w", err)
-		}
-
-		allEmployees = append(allEmployees, response.Employees...)
-
-		if response.Cursor == "" {
-			break
-		}
-		cursor = response.Cursor
-	}
-
-	return allEmployees, nil
-}
-
-// CreateReceipt creates a new receipt
-func (c *Client) CreateReceipt(ctx context.Context, receipt interface{}) error {
-	data, err := json.Marshal(receipt)
-	if err != nil {
-		return fmt.Errorf("marshaling receipt: %w", err)
-	}
-
-	_, err = c.Request(ctx, http.MethodPost, "/receipts", bytes.NewReader(data))
-	return err
-}
-
-// GetAccount retrieves account information (single object, no pagination)
-func (c *Client) GetAccount(ctx context.Context) ([]byte, error) {
-	return c.Request(ctx, http.MethodGet, "/account", nil)
-}
-
-// GetSettings retrieves settings (single object, no pagination)
-func (c *Client) GetSettings(ctx context.Context) ([]byte, error) {
-	return c.Request(ctx, http.MethodGet, "/settings", nil)
-}
-
-// Generic pagination helper for endpoints with standard structure
-func (c *Client) getWithStandardPagination(ctx context.Context, endpoint, dataField string) ([]json.RawMessage, error) {
-	var allData []json.RawMessage
-	cursor := ""
-	limit := 250
 
 	for {
 		url := fmt.Sprintf("%s?limit=%d", endpoint, limit)
@@ -328,25 +84,79 @@ func (c *Client) getWithStandardPagination(ctx context.Context, endpoint, dataFi
 			return nil, err
 		}
 
-		// Parse response dynamically based on dataField
-		var rawResponse map[string]json.RawMessage
-		if err := json.Unmarshal(body, &rawResponse); err != nil {
-			return nil, fmt.Errorf("parsing response: %w", err)
+		var response struct {
+			Data   []json.RawMessage `json:"data"`
+			Cursor string            `json:"cursor"`
 		}
 
-		// Extract data array
-		if dataRaw, exists := rawResponse[dataField]; exists {
-			var data []json.RawMessage
-			if err := json.Unmarshal(dataRaw, &data); err != nil {
-				return nil, fmt.Errorf("parsing %s array: %w", dataField, err)
+		log.Printf("DEBUG: Raw response body: %s", string(body))
+
+		// Try to unmarshal with different field names based on endpoint
+		if err := json.Unmarshal(body, &response); err != nil {
+			// Try alternative structure for specific endpoints
+			var altResponse map[string]json.RawMessage
+			if err := json.Unmarshal(body, &altResponse); err != nil {
+				return nil, fmt.Errorf("parsing response: %w", err)
 			}
-			allData = append(allData, data...)
-		}
 
-		// Extract cursor
-		cursor = ""
-		if cursorRaw, exists := rawResponse["cursor"]; exists {
-			json.Unmarshal(cursorRaw, &cursor)
+			log.Printf("DEBUG: Response structure: %+v", altResponse)
+
+			// Extract data based on endpoint type
+			dataFound := false
+			for key, value := range altResponse {
+				if key == "cursor" {
+					json.Unmarshal(value, &cursor)
+				} else if key != "cursor" && !dataFound {
+					// This is likely our data array - try to unmarshal as array
+					var items []json.RawMessage
+					if err := json.Unmarshal(value, &items); err == nil {
+						log.Printf("DEBUG: Found %d items in key '%s'", len(items), key)
+						allResults = append(allResults, items...)
+						dataFound = true
+						// Look for cursor in the response
+						if cursorValue, exists := altResponse["cursor"]; exists {
+							json.Unmarshal(cursorValue, &cursor)
+						}
+					}
+				}
+			}
+		} else {
+			log.Printf("DEBUG: Standard response unmarshaled, found %d items", len(response.Data))
+			
+			// If no data found in standard response, try alternative structure
+			if len(response.Data) == 0 {
+				var altResponse map[string]json.RawMessage
+				if err := json.Unmarshal(body, &altResponse); err == nil {
+					log.Printf("DEBUG: Alternative response structure: %+v", altResponse)
+					
+					// Extract data from alternative keys
+					dataFound := false
+					for key, value := range altResponse {
+						if key == "cursor" {
+							json.Unmarshal(value, &cursor)
+						} else if key != "cursor" && !dataFound {
+							// This is likely our data array - try to unmarshal as array
+							var items []json.RawMessage
+							if err := json.Unmarshal(value, &items); err == nil {
+								log.Printf("DEBUG: Found %d items in alternative key '%s'", len(items), key)
+								allResults = append(allResults, items...)
+								dataFound = true
+								// Look for cursor in the response
+								if cursorValue, exists := altResponse["cursor"]; exists {
+									json.Unmarshal(cursorValue, &cursor)
+								}
+							}
+						}
+					}
+				}
+			} else {
+				allResults = append(allResults, response.Data...)
+			}
+			
+			// Use cursor from standard response if not found in alternative
+			if cursor == "" {
+				cursor = response.Cursor
+			}
 		}
 
 		if cursor == "" {
@@ -354,137 +164,175 @@ func (c *Client) getWithStandardPagination(ctx context.Context, endpoint, dataFi
 		}
 	}
 
-	return allData, nil
+	return allResults, nil
 }
 
-// Additional endpoints using the generic helper
-func (c *Client) GetCategories(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/categories", "categories")
+// GetReceiptsBatch handles receipts with proper cursor pagination
+func (c *Client) GetReceiptsBatch(ctx context.Context, cursor string, limit int) ([]json.RawMessage, error) {
+	var allResults []json.RawMessage
+	currentCursor := cursor
+
+	for {
+		url := fmt.Sprintf("/receipts?limit=%d", limit)
+		if currentCursor != "" {
+			url += "&cursor=" + currentCursor
+		}
+
+		body, err := c.Request(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		log.Printf("DEBUG: Receipts raw response: %s", string(body))
+
+		// Parse receipts response
+		var receiptsResponse struct {
+			Receipts []json.RawMessage `json:"receipts"`
+			Cursor   string            `json:"cursor"`
+		}
+
+		if err := json.Unmarshal(body, &receiptsResponse); err != nil {
+			log.Printf("ERROR: Failed to parse receipts response: %v", err)
+			return nil, fmt.Errorf("parsing receipts response: %w", err)
+		}
+
+		log.Printf("DEBUG: Found %d receipts, next cursor: %s", len(receiptsResponse.Receipts), receiptsResponse.Cursor)
+		allResults = append(allResults, receiptsResponse.Receipts...)
+
+		if receiptsResponse.Cursor == "" {
+			break
+		}
+		currentCursor = receiptsResponse.Cursor
+	}
+
+	return allResults, nil
 }
 
+// Product-specific methods
+func (c *Client) GetProducts(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetWithPagination(ctx, "/items", 250)
+}
+
+func (c *Client) GetInventoryLevels(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetWithPagination(ctx, "/inventory", 250)
+}
+
+// GetReceipts retrieves receipts with cursor-based pagination
+func (c *Client) GetReceipts(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetReceiptsBatch(ctx, "", 250)
+}
+
+// GetRecentReceipts retrieves recent receipts
+func (c *Client) GetRecentReceipts(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetReceipts(ctx)
+}
+
+func (c *Client) CreateReceipt(ctx context.Context, receipt interface{}) error {
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		return fmt.Errorf("marshaling receipt: %w", err)
+	}
+
+	_, err = c.Request(ctx, http.MethodPost, "/receipts", bytes.NewReader(data))
+	return err
+}
+
+// Additional API methods for testing various endpoints
+
+// GetStores retrieves all stores
+func (c *Client) GetStores(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetWithPagination(ctx, "/stores", 250)
+}
+
+// GetCustomers retrieves all customers
+func (c *Client) GetCustomers(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetWithPagination(ctx, "/customers", 250)
+}
+
+// GetEmployees retrieves all employees
+func (c *Client) GetEmployees(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetWithPagination(ctx, "/employees", 250)
+}
+
+// GetDiscounts retrieves all discounts
 func (c *Client) GetDiscounts(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/discounts", "discounts")
+	return c.GetWithPagination(ctx, "/discounts", 250)
 }
 
+// GetModifiers retrieves all modifiers
 func (c *Client) GetModifiers(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/modifiers", "modifiers")
+	return c.GetWithPagination(ctx, "/modifiers", 250)
 }
 
+// GetTaxes retrieves taxes
 func (c *Client) GetTaxes(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/taxes", "taxes")
+	return c.GetWithPagination(ctx, "/taxes", 250)
 }
 
+// GetPaymentTypes retrieves payment types
 func (c *Client) GetPaymentTypes(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/payment_types", "payment_types")
+	return c.GetWithPagination(ctx, "/payment_types", 250)
 }
 
+// GetVariants retrieves product variants
 func (c *Client) GetVariants(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/variants", "variants")
+	return c.GetWithPagination(ctx, "/variants", 250)
 }
 
+// GetInventory retrieves inventory levels
+func (c *Client) GetInventory(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetWithPagination(ctx, "/inventory", 250)
+}
+
+// GetSuppliers retrieves suppliers
 func (c *Client) GetSuppliers(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/suppliers", "suppliers")
+	return c.GetWithPagination(ctx, "/suppliers", 250)
 }
 
+// GetPurchaseOrders retrieves purchase orders
 func (c *Client) GetPurchaseOrders(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/purchase_orders", "purchase_orders")
+	return c.GetWithPagination(ctx, "/purchase_orders", 250)
 }
 
+// GetReceiptsWithParams retrieves receipts with parameters
+func (c *Client) GetReceiptsWithParams(ctx context.Context, params map[string]string) ([]json.RawMessage, error) {
+	return c.GetReceipts(ctx)
+}
+
+// GetPOSDevices retrieves POS devices
 func (c *Client) GetPOSDevices(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/pos_devices", "pos_devices")
+	return c.GetWithPagination(ctx, "/pos_devices", 250)
 }
 
+// GetCashRegisters retrieves cash registers
 func (c *Client) GetCashRegisters(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/cash_registers", "cash_registers")
+	return c.GetWithPagination(ctx, "/cash_registers", 250)
 }
 
+// GetWebhooks retrieves webhooks
 func (c *Client) GetWebhooks(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/webhooks", "webhooks")
+	return c.GetWithPagination(ctx, "/webhooks", 250)
 }
 
-// TestAllEndpoints tests all available endpoints
-func (c *Client) TestAllEndpoints(ctx context.Context) map[string]interface{} {
-	results := make(map[string]interface{})
-	
-	// Define endpoints with their expected data field names
-	endpoints := map[string]struct {
-		path      string
-		dataField string
-		method    func(context.Context) ([]json.RawMessage, error)
-	}{
-		"stores":          {"/stores", "stores", c.GetStores},
-		"customers":       {"/customers", "customers", c.GetCustomers},
-		"employees":       {"/employees", "employees", c.GetEmployees},
-		"categories":      {"/categories", "categories", c.GetCategories},
-		"items":           {"/items", "items", c.GetProducts},
-		"inventory":       {"/inventory", "inventory_levels", c.GetInventoryLevels},
-		"receipts":        {"/receipts", "receipts", c.GetReceipts},
-		"discounts":       {"/discounts", "discounts", c.GetDiscounts},
-		"modifiers":       {"/modifiers", "modifiers", c.GetModifiers},
-		"taxes":           {"/taxes", "taxes", c.GetTaxes},
-		"payment_types":   {"/payment_types", "payment_types", c.GetPaymentTypes},
-		"variants":        {"/variants", "variants", c.GetVariants},
-		"suppliers":       {"/suppliers", "suppliers", c.GetSuppliers},
-		"purchase_orders": {"/purchase_orders", "purchase_orders", c.GetPurchaseOrders},
-		"pos_devices":     {"/pos_devices", "pos_devices", c.GetPOSDevices},
-		"cash_registers":  {"/cash_registers", "cash_registers", c.GetCashRegisters},
-		"webhooks":        {"/webhooks", "webhooks", c.GetWebhooks},
-	}
-	
-	// Test paginated endpoints
-	for name, endpoint := range endpoints {
-		log.Printf("Testing endpoint: %s (%s)", name, endpoint.path)
-		
-		data, err := endpoint.method(ctx)
-		if err != nil {
-			results[name] = map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-				"count":   0,
-			}
-		} else {
-			results[name] = map[string]interface{}{
-				"success": true,
-				"count":   len(data),
-			}
-		}
-	}
-	
-	// Test single object endpoints
-	singleEndpoints := map[string]string{
-		"account":  "/account",
-		"settings": "/settings",
-	}
-	
-	for name, path := range singleEndpoints {
-		log.Printf("Testing endpoint: %s (%s)", name, path)
-		
-		var err error
-		switch name {
-		case "account":
-			_, err = c.GetAccount(ctx)
-		case "settings":
-			_, err = c.GetSettings(ctx)
-		}
-		
-		if err != nil {
-			results[name] = map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-				"count":   0,
-			}
-		} else {
-			results[name] = map[string]interface{}{
-				"success": true,
-				"count":   1,
-			}
-		}
-	}
-	
-	return results
+// GetCategories retrieves categories
+func (c *Client) GetCategories(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetWithPagination(ctx, "/categories", 250)
 }
 
-// Additional helper methods for compatibility with main.go
+// GetAccount retrieves account information
+func (c *Client) GetAccount(ctx context.Context) ([]byte, error) {
+	return c.Request(ctx, http.MethodGet, "/account", nil)
+}
+
+// GetSettings retrieves settings
+func (c *Client) GetSettings(ctx context.Context) ([]byte, error) {
+	return c.Request(ctx, http.MethodGet, "/settings", nil)
+}
+
+// GetEndpoint is a generic method for any endpoint
+func (c *Client) GetEndpoint(ctx context.Context, endpoint string) ([]byte, error) {
+	return c.Request(ctx, http.MethodGet, endpoint, nil)
+}
 
 // GetAvailableEndpoints returns map of available endpoints
 func (c *Client) GetAvailableEndpoints() map[string]string {
@@ -502,7 +350,6 @@ func (c *Client) GetAvailableEndpoints() map[string]string {
 		"pos_devices":     "/pos_devices",
 		"cash_registers":  "/cash_registers",
 		"webhooks":        "/webhooks",
-		"store_stocks":    "/store_stocks",
 		"categories":      "/categories",
 		"items":           "/items",
 		"inventory":       "/inventory",
@@ -512,27 +359,55 @@ func (c *Client) GetAvailableEndpoints() map[string]string {
 	}
 }
 
-// GetEndpoint is a generic method for any endpoint
-func (c *Client) GetEndpoint(ctx context.Context, endpoint string) ([]byte, error) {
-	return c.Request(ctx, http.MethodGet, endpoint, nil)
-}
-
-// GetReceiptsWithParams retrieves receipts with parameters (compatibility method)
-func (c *Client) GetReceiptsWithParams(ctx context.Context, params map[string]string) ([]json.RawMessage, error) {
-	return c.GetReceipts(ctx)
-}
-
-// GetRecentReceipts retrieves recent receipts (compatibility method)
-func (c *Client) GetRecentReceipts(ctx context.Context) ([]json.RawMessage, error) {
-	return c.GetReceipts(ctx)
-}
-
-// GetStoreStocks retrieves store stock levels (using generic helper)
-func (c *Client) GetStoreStocks(ctx context.Context) ([]json.RawMessage, error) {
-	return c.getWithStandardPagination(ctx, "/store_stocks", "store_stocks")
-}
-
-// GetInventory for compatibility (alias for GetInventoryLevels)
-func (c *Client) GetInventory(ctx context.Context) ([]json.RawMessage, error) {
-	return c.GetInventoryLevels(ctx)
+// TestAllEndpoints tests all available endpoints
+func (c *Client) TestAllEndpoints(ctx context.Context) map[string]interface{} {
+	results := make(map[string]interface{})
+	endpoints := c.GetAvailableEndpoints()
+	
+	for name, path := range endpoints {
+		log.Printf("Testing endpoint: %s (%s)", name, path)
+		
+		var count int
+		var err error
+		
+		switch name {
+		case "receipts":
+			data, testErr := c.GetReceipts(ctx)
+			count = len(data)
+			err = testErr
+		case "variants":
+			data, testErr := c.GetVariants(ctx)
+			count = len(data)
+			err = testErr
+		case "inventory":
+			data, testErr := c.GetInventory(ctx)
+			count = len(data)
+			err = testErr
+		case "account", "settings":
+			_, testErr := c.GetEndpoint(ctx, path)
+			if testErr == nil {
+				count = 1
+			}
+			err = testErr
+		default:
+			data, testErr := c.GetWithPagination(ctx, path, 250)
+			count = len(data)
+			err = testErr
+		}
+		
+		if err != nil {
+			results[name] = map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+				"count":   0,
+			}
+		} else {
+			results[name] = map[string]interface{}{
+				"success": true,
+				"count":   count,
+			}
+		}
+	}
+	
+	return results
 }

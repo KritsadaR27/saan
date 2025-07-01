@@ -32,27 +32,27 @@ func NewCategorySync(client *connector.Client, publisher *events.Publisher, redi
 
 func (s *CategorySync) Sync(ctx context.Context) error {
 	log.Println("Starting category sync...")
-	
+
 	// Get last sync time
 	lastSyncKey := "loyverse:sync:category:last"
 	lastSync, _ := s.redis.Get(ctx, lastSyncKey).Result()
-	
+
 	// Fetch categories
 	rawData, err := s.client.GetCategories(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching categories: %w", err)
 	}
-	
+
 	var domainEvents []events.DomainEvent
 	processedCount := 0
-	
+
 	for _, raw := range rawData {
 		var category models.Category
 		if err := json.Unmarshal(raw, &category); err != nil {
 			log.Printf("Error unmarshaling category: %v", err)
 			continue
 		}
-		
+
 		// Skip if not updated since last sync
 		if lastSync != "" {
 			lastSyncTime, _ := time.Parse(time.RFC3339, lastSync)
@@ -60,27 +60,27 @@ func (s *CategorySync) Sync(ctx context.Context) error {
 				continue
 			}
 		}
-		
+
 		// Create domain event
 		event := s.createCategoryEvent(category)
 		domainEvents = append(domainEvents, event)
 		processedCount++
-		
+
 		// Cache category data
 		cacheKey := fmt.Sprintf("loyverse:category:%s", category.ID)
 		s.redis.Set(ctx, cacheKey, raw, 24*time.Hour)
 	}
-	
+
 	// Publish events
 	if len(domainEvents) > 0 {
 		if err := s.publisher.PublishBatch(ctx, domainEvents); err != nil {
 			return fmt.Errorf("publishing events: %w", err)
 		}
 	}
-	
+
 	// Update last sync time
 	s.redis.Set(ctx, lastSyncKey, time.Now().Format(time.RFC3339), 0)
-	
+
 	log.Printf("Category sync completed. Processed %d categories", processedCount)
 	return nil
 }
@@ -93,9 +93,9 @@ func (s *CategorySync) createCategoryEvent(category models.Category) events.Doma
 		"parent_id":   category.ParentID,
 		"source":      "loyverse",
 	}
-	
+
 	data, _ := json.Marshal(eventData)
-	
+
 	return events.DomainEvent{
 		ID:            fmt.Sprintf("cat-%s-%d", category.ID, time.Now().Unix()),
 		Type:          events.EventCategoryUpdated,

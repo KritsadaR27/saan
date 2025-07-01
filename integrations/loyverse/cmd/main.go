@@ -1,4 +1,3 @@
-// integrations/loyverse/cmd/main.go
 package main
 
 import (
@@ -12,13 +11,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/go-redis/redis/v8"
-	"github.com/gorilla/mux"
-
 	"integrations/loyverse/config"
 	"integrations/loyverse/internal/connector"
 	"integrations/loyverse/internal/events"
 	"integrations/loyverse/internal/sync"
+
+	"github.com/go-redis/redis/v8"
 )
 
 func main() {
@@ -29,207 +27,337 @@ func main() {
 	}
 
 	// Setup context with cancellation
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	log.Printf("Starting Loyverse integration service on port %d", cfg.Port)
+	log.Printf("Redis: %s", cfg.RedisAddr)
+	log.Printf("Kafka: %s", cfg.KafkaBrokers)
 
 	// Initialize Redis client
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
-		Password: cfg.RedisPassword,
-		DB:       cfg.RedisDB,
+		Addr: cfg.RedisAddr,
+		DB:   0,
 	})
 	defer redisClient.Close()
 
-	// Test Redis connection
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
-	}
-
-	// Initialize Loyverse API client
-	loyverseClient := connector.NewClient(cfg.LoyverseAPIToken)
-
-	// Initialize Kafka publisher
+	// Initialize Kafka event publisher
 	publisher := events.NewPublisher(cfg.KafkaBrokers, cfg.KafkaTopic)
 	defer publisher.Close()
-
-	// Initialize sync services
+	// Initialize Loyverse API client
+	loyverseClient := connector.NewClient(cfg.LoyverseAPIToken)
+	
+	// Initialize sync managers
 	productSync := sync.NewProductSync(loyverseClient, publisher, redisClient)
-	inventorySync := sync.NewInventorySync(loyverseClient, publisher, redisClient)
-	receiptSync := sync.NewReceiptSync(loyverseClient, publisher, redisClient)
-	customerSync := sync.NewCustomerSync(loyverseClient, publisher, redisClient)
+	
+	// Start sync in background
+	syncCtx, syncCancel := context.WithCancel(context.Background())
+	defer syncCancel()
+	
+	go func() {
+		log.Println("Extended sync manager started")
+		
+		// Run sync every 5 minutes for testing
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		
+		// Run initial sync
+		log.Println("Starting initial sync...")
+		if err := productSync.Sync(syncCtx); err != nil {
+			log.Printf("Product sync error: %v", err)
+		}
+		
+		for {
+			select {
+			case <-ticker.C:
+				log.Println("Running scheduled sync...")
+				if err := productSync.Sync(syncCtx); err != nil {
+					log.Printf("Product sync error: %v", err)
+				}
+			case <-syncCtx.Done():
+				return
+			}
+		}
+	}()
 
-	// Initialize sync manager
-	syncManager, err := sync.NewManager(
-		productSync,
-		inventorySync,
-		receiptSync,
-		customerSync,
-		redisClient,
-		sync.Config{
-			ProductSyncInterval:   cfg.ProductSyncInterval,
-			InventorySyncInterval: cfg.InventorySyncInterval,
-			ReceiptSyncInterval:   cfg.ReceiptSyncInterval,
-			CustomerSyncInterval:  cfg.CustomerSyncInterval,
-			TimeZone:              cfg.TimeZone,
-		},
-	)
-	if err != nil {
-		log.Fatalf("Failed to create sync manager: %v", err)
-	}
+	// Simple webhook handler
+	simpleWebhookHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"status":"received","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
+	})
 
-	// Start sync manager
-	if err := syncManager.Start(ctx); err != nil {
-		log.Fatalf("Failed to start sync manager: %v", err)
-	}
-	defer syncManager.Stop()
-
-	// Setup HTTP server for admin endpoints only
-	router := mux.NewRouter()
-
-	// Health check endpoint
-	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Setup HTTP routes
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{"status":"healthy","service":"loyverse-integration","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
-	}).Methods("GET")
+	})
 
-	// Admin endpoints
-	adminRouter := router.PathPrefix("/admin").Subrouter()
-	adminRouter.Use(authMiddleware(cfg.AdminToken))
+	// Webhook endpoint for Loyverse
+	http.Handle("/webhook/loyverse", simpleWebhookHandler)
 
-	// Manual sync triggers
-	adminRouter.HandleFunc("/sync/{type}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		syncType := vars["type"]
-
-		if err := syncManager.TriggerSync(ctx, syncType); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+	// Sync endpoint
+	http.HandleFunc("/api/sync", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"error":"Method not allowed"}`)
 			return
 		}
-
+		
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"message":"Sync triggered for %s"}`, syncType)
-	}).Methods("POST")
+		fmt.Fprintf(w, `{"status":"sync_triggered","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
+	})
 
-	// Sync status endpoint
-	adminRouter.HandleFunc("/sync/status", func(w http.ResponseWriter, r *http.Request) {
-		status, err := syncManager.GetSyncStatus(ctx)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+	// API endpoint to get latest receipt (disabled temporarily)
+	http.HandleFunc("/api/latest-receipt", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Endpoint temporarily disabled", http.StatusServiceUnavailable)
+	})
+
+	// API endpoint to get all categories (disabled temporarily)
+	http.HandleFunc("/api/categories", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Endpoint temporarily disabled", http.StatusServiceUnavailable)
+	})
+
+	// API endpoint to fetch categories from Loyverse API directly
+	http.HandleFunc("/api/categories/fetch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(status); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	}).Methods("GET")
-
-	// Test endpoints for data retrieval
-	adminRouter.HandleFunc("/test/products", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Testing product data retrieval...")
-		products, err := loyverseClient.GetProducts(ctx)
-		if err != nil {
-			log.Printf("Error retrieving products: %v", err)
-			http.Error(w, fmt.Sprintf("Error retrieving products: %v", err), http.StatusInternalServerError)
+		if cfg.LoyverseAPIToken == "" {
+			http.Error(w, "Loyverse API token not configured", http.StatusBadRequest)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		// Create Loyverse API client
+		loyverseAPI := connector.NewLoyverseAPI(cfg.LoyverseAPIToken)
+
+		// Fetch categories from Loyverse API
+		categories, err := loyverseAPI.GetCategories()
+		if err != nil {
+			log.Printf("Error fetching categories from Loyverse API: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to fetch categories: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Fetched %d categories from Loyverse API", len(categories))
+
+		// Convert categories to JSON format for storage
+		var categoryRawMessages []json.RawMessage
+		for _, category := range categories {
+			categoryData, err := json.Marshal(category)
+			if err != nil {
+				log.Printf("Error marshaling category %s: %v", category.ID, err)
+				continue
+			}
+			categoryRawMessages = append(categoryRawMessages, json.RawMessage(categoryData))
+		}
+
+		log.Printf("Retrieved %d categories from Loyverse API", len(categories))
+
+		// Publish category sync events to Kafka
+		ctx := context.Background()
+		for _, category := range categories {
+			// Transform to domain event
+			categoryData, _ := json.Marshal(category)
+			transformedEvent := events.DomainEvent{
+				ID:            fmt.Sprintf("category_%s_%d", category.ID, time.Now().Unix()),
+				Type:          events.EventCategoryUpdated,
+				AggregateID:   category.ID,
+				AggregateType: "category",
+				Timestamp:     time.Now(),
+				Version:       1,
+				Data:          json.RawMessage(categoryData),
+				Source:        "loyverse-api",
+			}
+
+			if err := publisher.Publish(ctx, transformedEvent); err != nil {
+				log.Printf("Error publishing category event for %s: %v", category.ID, err)
+				// Don't fail the request if Kafka publishing fails
+			}
+		}
+
+		// Return success response
 		response := map[string]interface{}{
-			"message": "Products retrieved successfully",
-			"count":   len(products),
-			"data":    products,
-		}
-		json.NewEncoder(w).Encode(response)
-	}).Methods("GET")
-
-	adminRouter.HandleFunc("/test/customers", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Testing customer data retrieval...")
-		customers, err := loyverseClient.GetCustomers(ctx)
-		if err != nil {
-			log.Printf("Error retrieving customers: %v", err)
-			http.Error(w, fmt.Sprintf("Error retrieving customers: %v", err), http.StatusInternalServerError)
-			return
+			"success":        true,
+			"message":        "Categories fetched and stored successfully",
+			"categories_count": len(categories),
+			"timestamp":      time.Now().Format(time.RFC3339),
+			"source":         "loyverse_api",
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		response := map[string]interface{}{
-			"message": "Customers retrieved successfully",
-			"count":   len(customers),
-			"data":    customers,
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Error encoding response: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
-		json.NewEncoder(w).Encode(response)
-	}).Methods("GET")
+	})
 
-	adminRouter.HandleFunc("/test/receipts", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Testing receipt data retrieval...")
-		receipts, err := loyverseClient.GetReceipts(ctx)
-		if err != nil {
-			log.Printf("Error retrieving receipts: %v", err)
-			http.Error(w, fmt.Sprintf("Error retrieving receipts: %v", err), http.StatusInternalServerError)
+	// API endpoint to test various Loyverse endpoints
+	http.HandleFunc("/api/test/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		response := map[string]interface{}{
-			"message": "Receipts retrieved successfully",
-			"count":   len(receipts),
-			"data":    receipts,
-		}
-		json.NewEncoder(w).Encode(response)
-	}).Methods("GET")
-
-	adminRouter.HandleFunc("/test/inventory", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Testing inventory data retrieval...")
-		inventory, err := loyverseClient.GetInventoryLevels(ctx)
-		if err != nil {
-			log.Printf("Error retrieving inventory: %v", err)
-			http.Error(w, fmt.Sprintf("Error retrieving inventory: %v", err), http.StatusInternalServerError)
+		if cfg.LoyverseAPIToken == "" {
+			http.Error(w, "Loyverse API token not configured", http.StatusBadRequest)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		response := map[string]interface{}{
-			"message": "Inventory retrieved successfully",
-			"count":   len(inventory),
-			"data":    inventory,
-		}
-		json.NewEncoder(w).Encode(response)
-	}).Methods("GET")
+		// Extract endpoint name from URL path
+		endpoint := r.URL.Path[len("/api/test/"):]
+		if endpoint == "" || endpoint == "help" {
+			// Get all available endpoints from client
+			client := connector.NewClient(cfg.LoyverseAPIToken)
+			allEndpoints := client.GetAvailableEndpoints()
 
-	adminRouter.HandleFunc("/test/stores", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Testing store data retrieval...")
-		stores, err := loyverseClient.GetStores(ctx)
-		if err != nil {
-			log.Printf("Error retrieving stores: %v", err)
-			http.Error(w, fmt.Sprintf("Error retrieving stores: %v", err), http.StatusInternalServerError)
+			endpoints := make([]string, 0, len(allEndpoints))
+			for name := range allEndpoints {
+				endpoints = append(endpoints, name)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"available_endpoints": endpoints,
+				"endpoint_urls": allEndpoints,
+				"usage": "GET /api/test/{endpoint}",
+				"examples": []string{
+					"GET /api/test/stores",
+					"GET /api/test/categories",
+					"GET /api/test/items",
+					"GET /api/test/receipts",
+					"GET /api/test/customers",
+					"GET /api/test/inventory",
+				},
+				"special_endpoints": map[string]string{
+					"test_all": "GET /api/test/test_all - Test all endpoints at once",
+					"help": "GET /api/test/help - Show this help",
+				},
+			})
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		response := map[string]interface{}{
-			"message": "Stores retrieved successfully",
-			"count":   len(stores),
-			"data":    stores,
+		// Create Loyverse API client
+		client := connector.NewClient(cfg.LoyverseAPIToken)
+		ctx := context.Background()
+
+		var data []json.RawMessage
+		var err error
+
+		// Route to appropriate method based on endpoint
+		switch endpoint {
+		case "test_all":
+			// Test all endpoints at once
+			results := client.TestAllEndpoints(ctx)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(results)
+			return
+		case "stores":
+			data, err = client.GetStores(ctx)
+		case "customers":
+			data, err = client.GetCustomers(ctx)
+		case "employees":
+			data, err = client.GetEmployees(ctx)
+		case "discounts":
+			data, err = client.GetDiscounts(ctx)
+		case "modifiers":
+			data, err = client.GetModifiers(ctx)
+		case "taxes":
+			data, err = client.GetTaxes(ctx)
+		case "payment_types":
+			data, err = client.GetPaymentTypes(ctx)
+		case "variants":
+			data, err = client.GetVariants(ctx)
+		case "suppliers":
+			data, err = client.GetSuppliers(ctx)
+		case "purchase_orders":
+			data, err = client.GetPurchaseOrders(ctx)
+		case "pos_devices":
+			data, err = client.GetPOSDevices(ctx)
+		case "cash_registers":
+			data, err = client.GetCashRegisters(ctx)
+		case "webhooks":
+			data, err = client.GetWebhooks(ctx)
+		case "categories":
+			loyverseAPI := connector.NewLoyverseAPI(cfg.LoyverseAPIToken)
+			categories, err := loyverseAPI.GetCategories()
+			if err == nil {
+				for _, cat := range categories {
+					catData, _ := json.Marshal(cat)
+					data = append(data, json.RawMessage(catData))
+				}
+			}
+		case "items":
+			data, err = client.GetProducts(ctx)
+		case "inventory":
+			data, err = client.GetInventoryLevels(ctx)
+		case "recent_receipts":
+			data, err = client.GetRecentReceipts(ctx)
+		case "receipts":
+			data, err = client.GetReceiptsWithParams(ctx, nil)
+		case "account":
+			rawData, err := client.GetAccount(ctx)
+			if err == nil {
+				data = append(data, json.RawMessage(rawData))
+			}
+		case "settings":
+			rawData, err := client.GetSettings(ctx)
+			if err == nil {
+				data = append(data, json.RawMessage(rawData))
+			}
+		default:
+			// Try as raw endpoint
+			rawData, rawErr := client.GetEndpoint(ctx, "/"+endpoint)
+			if rawErr != nil {
+				http.Error(w, fmt.Sprintf("Unknown endpoint '%s' or API error: %v", endpoint, rawErr), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(rawData)
+			return
 		}
-		json.NewEncoder(w).Encode(response)
-	}).Methods("GET")
 
-	// Create HTTP server
-	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
+		if err != nil {
+			log.Printf("Error fetching %s: %v", endpoint, err)
+			http.Error(w, fmt.Sprintf("Failed to fetch %s: %v", endpoint, err), http.StatusInternalServerError)
+			return
+		}
 
-	// Start server in goroutine
+		// Return results
+		response := map[string]interface{}{
+			"endpoint": endpoint,
+			"count":    len(data),
+			"data":     data,
+			"timestamp": time.Now().Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Error encoding response: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	})
+
+	log.Println("Registered endpoints:")
+	log.Println("  GET  /health")
+	log.Println("  POST /webhook/loyverse")
+	log.Println("  GET  /api/latest-receipt")
+	log.Println("  GET  /api/categories")
+	log.Println("  POST /api/categories/fetch")
+	log.Println("  GET  /api/test/{endpoint}")
+
+	// Start server
+	addr := fmt.Sprintf(":%d", cfg.Port)
+	log.Printf("Server starting on %s", addr)
+
+	server := &http.Server{Addr: addr}
 	go func() {
-		log.Printf("Starting Loyverse integration service on port %d", cfg.Port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
 		}
 	}()
 
@@ -239,28 +367,12 @@ func main() {
 	<-sigChan
 
 	log.Println("Shutting down server...")
-
-	// Graceful shutdown with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
 	}
 
 	log.Println("Server stopped")
-}
-
-// authMiddleware checks for admin token
-func authMiddleware(adminToken string) mux.MiddlewareFunc {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token := r.Header.Get("X-Admin-Token")
-			if token != adminToken {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
 }

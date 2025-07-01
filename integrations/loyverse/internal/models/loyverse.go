@@ -165,9 +165,9 @@ type Receipt struct {
 	Source         string     `json:"source"`
 	TotalMoney     float64    `json:"total_money"`
 	TotalTax       float64    `json:"total_tax"`
-	PointsEarned   int        `json:"points_earned"`
-	PointsDeducted int        `json:"points_deducted"`
-	PointsBalance  int        `json:"points_balance"`
+	PointsEarned   float64    `json:"points_earned"`
+	PointsDeducted float64    `json:"points_deducted"`
+	PointsBalance  float64    `json:"points_balance"`
 	CustomerID     *string    `json:"customer_id"`
 	CustomerName   string     `json:"customer_name"`
 	CustomerPhone  string     `json:"customer_phone_number"`

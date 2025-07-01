@@ -119,13 +119,17 @@ services:
       - KAFKA_TOPIC=loyverse-events
       - PORT=8091
       - TZ=Asia/Bangkok
-      - LOYVERSE_WEBHOOK_SECRET=
-      - ADMIN_TOKEN=${ADMIN_TOKEN}
-      # Sync Intervals (Cron format)
-      - PRODUCT_SYNC_INTERVAL=*/30 * * * *       # ทุก 30 นาที
-      - INVENTORY_SYNC_INTERVAL=*/15 * * * *     # ทุก 15 นาที
-      - RECEIPT_SYNC_INTERVAL=*/5 * * * *        # ทุก 5 นาที
-      - CUSTOMER_SYNC_INTERVAL=0 * * * *         # ทุกชั่วโมง
+      # Master Data Sync (ทุก 12 ชั่วโมง - ไม่ค่อยเปลี่ยน)
+      - CATEGORY_SYNC_INTERVAL=0 */12 * * *      # ทุก 12 ชม
+      - SUPPLIER_SYNC_INTERVAL=0 */12 * * *      # ทุก 12 ชม  
+      - PAYMENT_TYPE_SYNC_INTERVAL=0 */12 * * *  # ทุก 12 ชม
+      - EMPLOYEE_SYNC_INTERVAL=0 */12 * * *      # ทุก 12 ชม
+      - STORE_SYNC_INTERVAL=0 */12 * * *         # ทุก 12 ชม
+      # Real-time Data Sync (น้อยลง เพราะมี webhook)
+      - PRODUCT_SYNC_INTERVAL=0 */6 * * *        # ทุก 6 ชม (มี webhook แล้ว)
+      - INVENTORY_SYNC_INTERVAL=0 */4 * * *      # ทุก 4 ชม (มี webhook แล้ว)
+      - RECEIPT_SYNC_INTERVAL=0 */2 * * *        # ทุก 2 ชม (มี webhook แล้ว)
+      - CUSTOMER_SYNC_INTERVAL=0 */8 * * *       # ทุก 8 ชม (มี webhook แล้ว)
     ports:
       - "8091:8091"
     volumes:

@@ -27,6 +27,13 @@ type Config struct {
 	InventorySyncInterval string
 	ReceiptSyncInterval   string
 	CustomerSyncInterval  string
+	
+	// Extended sync intervals
+	EmployeeSyncInterval    string
+	CategorySyncInterval    string
+	SupplierSyncInterval    string
+	PaymentTypeSyncInterval string
+	StoreSyncInterval       string
 
 	// Server
 	Port       int
@@ -54,6 +61,13 @@ func Load() (*Config, error) {
 		InventorySyncInterval: getEnv("INVENTORY_SYNC_INTERVAL", "*/15 * * * *"),
 		ReceiptSyncInterval:   getEnv("RECEIPT_SYNC_INTERVAL", "*/5 * * * *"),
 		CustomerSyncInterval:  getEnv("CUSTOMER_SYNC_INTERVAL", "0 * * * *"),
+		
+		// Extended sync intervals (from environment variables)
+		EmployeeSyncInterval:    getEnv("EMPLOYEE_SYNC_INTERVAL", "0 */12 * * *"),
+		CategorySyncInterval:    getEnv("CATEGORY_SYNC_INTERVAL", "0 */12 * * *"),
+		SupplierSyncInterval:    getEnv("SUPPLIER_SYNC_INTERVAL", "0 */12 * * *"),
+		PaymentTypeSyncInterval: getEnv("PAYMENT_TYPE_SYNC_INTERVAL", "0 */12 * * *"),
+		StoreSyncInterval:       getEnv("STORE_SYNC_INTERVAL", "0 */12 * * *"),
 
 		// Server (note: webhook service now uses port 8093)
 		Port:       getEnvInt("PORT", 8084),
