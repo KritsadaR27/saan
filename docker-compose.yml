@@ -135,6 +135,125 @@ services:
       - saan-network
     restart: unless-stopped
 
+  # Webhook Services
+  loyverse-webhook:
+    build:
+      context: ./webhooks/loyverse-webhook
+      dockerfile: Dockerfile
+    container_name: loyverse-webhook
+    ports:
+      - "8093:8093"
+    environment:
+      PORT: "8093"
+      LOYVERSE_WEBHOOK_SECRET: ${LOYVERSE_WEBHOOK_SECRET:-}
+      KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8093/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  chat-webhook:
+    build:
+      context: ./webhooks/chat-webhook
+      dockerfile: Dockerfile
+    container_name: chat-webhook
+    ports:
+      - "8094:8094"
+    environment:
+      PORT: "8094"
+      FACEBOOK_VERIFY_TOKEN: ${FACEBOOK_VERIFY_TOKEN:-}
+      FACEBOOK_PAGE_ACCESS_TOKEN: ${FACEBOOK_PAGE_ACCESS_TOKEN:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET:-}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}
+      KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8094/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  delivery-webhook:
+    build:
+      context: ./webhooks/delivery-webhook
+      dockerfile: Dockerfile
+    container_name: delivery-webhook
+    ports:
+      - "8095:8095"
+    environment:
+      PORT: "8095"
+      GRAB_WEBHOOK_SECRET: ${GRAB_WEBHOOK_SECRET:-}
+      LINEMAN_WEBHOOK_SECRET: ${LINEMAN_WEBHOOK_SECRET:-}
+      KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8095/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  payment-webhook:
+    build:
+      context: ./webhooks/payment-webhook
+      dockerfile: Dockerfile
+    container_name: payment-webhook
+    ports:
+      - "8096:8096"
+    environment:
+      PORT: "8096"
+      OMISE_WEBHOOK_SECRET: ${OMISE_WEBHOOK_SECRET:-}
+      2C2P_WEBHOOK_SECRET: ${2C2P_WEBHOOK_SECRET:-}
+      KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 # Volumes
 volumes:
   postgres_data:

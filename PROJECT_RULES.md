@@ -29,6 +29,17 @@
 | Notification Service| LINE, FB, Email push notifications | 8092      | notification-service |
 | PostgreSQL Database | Shared relational database         | 5532      | postgres             |
 | Kafka (Message Bus) | Event queue system                 | 9092      | kafka                |
+| Loyverse Webhook    | Handles Loyverse POS webhooks      | 8093      | loyverse-webhook     |
+| Chat Webhook        | FB/LINE message webhooks           | 8094      | chat-webhook         |
+| Delivery Webhook    | Grab/LineMan status webhooks       | 8095      | delivery-webhook     |
+| Payment Webhook     | Payment gateway webhooks           | 8096      | payment-webhook      |
+
+## 📨 WEBHOOK ROUTING RULES
+- Each webhook service handles specific external sources
+- All webhooks publish to Kafka after validation
+- Webhook endpoints: http://[service-name]:[port]/webhook/[platform]
+- Example: http://chat-webhook:8094/webhook/facebook
+
 ---
 ## 🔄 INTERNAL COMMUNICATION RULES
 Use service names as hostnames for API calls and DB access:
