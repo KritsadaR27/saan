@@ -120,7 +120,7 @@ services:
       - PORT=8091
       - TZ=Asia/Bangkok
       - LOYVERSE_WEBHOOK_SECRET=
-      - ADMIN_TOKEN=saan-dev-admin-2024-secure    # Admin Token สำหรับ development
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
       # Sync Intervals (Cron format)
       - PRODUCT_SYNC_INTERVAL=*/30 * * * *       # ทุก 30 นาที
       - INVENTORY_SYNC_INTERVAL=*/15 * * * *     # ทุก 15 นาที

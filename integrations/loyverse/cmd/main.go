@@ -125,6 +125,97 @@ func main() {
 		}
 	}).Methods("GET")
 
+	// Test endpoints for data retrieval
+	adminRouter.HandleFunc("/test/products", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Testing product data retrieval...")
+		products, err := loyverseClient.GetProducts(ctx)
+		if err != nil {
+			log.Printf("Error retrieving products: %v", err)
+			http.Error(w, fmt.Sprintf("Error retrieving products: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]interface{}{
+			"message": "Products retrieved successfully",
+			"count":   len(products),
+			"data":    products,
+		}
+		json.NewEncoder(w).Encode(response)
+	}).Methods("GET")
+
+	adminRouter.HandleFunc("/test/customers", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Testing customer data retrieval...")
+		customers, err := loyverseClient.GetCustomers(ctx)
+		if err != nil {
+			log.Printf("Error retrieving customers: %v", err)
+			http.Error(w, fmt.Sprintf("Error retrieving customers: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]interface{}{
+			"message": "Customers retrieved successfully",
+			"count":   len(customers),
+			"data":    customers,
+		}
+		json.NewEncoder(w).Encode(response)
+	}).Methods("GET")
+
+	adminRouter.HandleFunc("/test/receipts", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Testing receipt data retrieval...")
+		receipts, err := loyverseClient.GetReceipts(ctx)
+		if err != nil {
+			log.Printf("Error retrieving receipts: %v", err)
+			http.Error(w, fmt.Sprintf("Error retrieving receipts: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]interface{}{
+			"message": "Receipts retrieved successfully",
+			"count":   len(receipts),
+			"data":    receipts,
+		}
+		json.NewEncoder(w).Encode(response)
+	}).Methods("GET")
+
+	adminRouter.HandleFunc("/test/inventory", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Testing inventory data retrieval...")
+		inventory, err := loyverseClient.GetInventoryLevels(ctx)
+		if err != nil {
+			log.Printf("Error retrieving inventory: %v", err)
+			http.Error(w, fmt.Sprintf("Error retrieving inventory: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]interface{}{
+			"message": "Inventory retrieved successfully",
+			"count":   len(inventory),
+			"data":    inventory,
+		}
+		json.NewEncoder(w).Encode(response)
+	}).Methods("GET")
+
+	adminRouter.HandleFunc("/test/stores", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Testing store data retrieval...")
+		stores, err := loyverseClient.GetStores(ctx)
+		if err != nil {
+			log.Printf("Error retrieving stores: %v", err)
+			http.Error(w, fmt.Sprintf("Error retrieving stores: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]interface{}{
+			"message": "Stores retrieved successfully",
+			"count":   len(stores),
+			"data":    stores,
+		}
+		json.NewEncoder(w).Encode(response)
+	}).Methods("GET")
+
 	// Create HTTP server
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
