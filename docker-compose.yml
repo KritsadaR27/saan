@@ -235,7 +235,7 @@ services:
     environment:
       PORT: "8096"
       OMISE_WEBHOOK_SECRET: ${OMISE_WEBHOOK_SECRET:-}
-      2C2P_WEBHOOK_SECRET: ${2C2P_WEBHOOK_SECRET:-}
+      C2P_WEBHOOK_SECRET: ${C2P_WEBHOOK_SECRET:-}
       KAFKA_BROKERS: kafka:9092
       REDIS_ADDR: redis:6379
     depends_on:

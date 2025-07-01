@@ -22,8 +22,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bin/loyverse-inte
 # Final stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates and timezone data for HTTPS requests and timezone support
+RUN apk --no-cache add ca-certificates tzdata
 
 # Create app user
 RUN addgroup -g 1001 -S app && \
