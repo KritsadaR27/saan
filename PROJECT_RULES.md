@@ -31,20 +31,23 @@
 | Finance Service        | Profit / accounting                  | 8085 | finance               |
 | Shipping Service       | Delivery & routing logic             | 8086 | shipping              |
 | Payment Service        | Payment verification & QR            | 8087 | payment               |
-| User Service           | Customer profile & member system     | 8088 | user                  |
+| User Service           | Internal user management (admin/staff) | 8088 | user                  |
+| Customer Service       | Customer profile & loyalty system       | 8110 | customer              |
 | Reporting Service      | Analytics & dashboard data           | 8089 | reporting             |
 | Notification Service   | LINE, FB, Email push notifications   | 8092 | notification-service  |
+| AI Service             | Prompt routing / orchestration       | 8097 | ai                    |
+| Analytics Service      | Trend, forecast, segmentation engine | 8098 | analytics             |
+| Procurement Service    | Purchase Order & Supplier Management | 8099 | procurement           |
+| Loyverse Integration   | Loyverse API data sync connector     | 8100 | loyverse-integration  |
 | PostgreSQL Database    | Shared relational database           | 5532 | postgres              |
+| Redis Cache            | Cache layer for fast data access    | 6379 | redis                 |
 | Kafka (Message Bus)    | Event queue system                   | 9092 | kafka                 |
 | Loyverse Webhook       | Handles Loyverse POS webhooks        | 8093 | loyverse-webhook      |
 | Chat Webhook           | FB/LINE message webhooks             | 8094 | chat-webhook          |
 | Delivery Webhook       | Grab/LineMan status webhooks         | 8095 | delivery-webhook      |
 | Payment Webhook        | Payment gateway webhooks             | 8096 | payment-webhook       |
-| AI Service             | Prompt routing / orchestration       | 8097 | ai                    |
-| Analytics Service      | Trend, forecast, segmentation engine | 8098 | analytics             |
-| Procurement Service    | Purchase Order & Supplier Management | 8099 | procurement           |
 | API Gateway (external) | Public-facing request router (Kong)  | 8080 | gateway               |
-| Static CDN Server      | Static assets (images, JS, CSS)      | 8088 | static                |
+| Static CDN Server      | Static assets (images, JS, CSS)      | 8101 | static                |
 | DevOps Monitoring      | Internal metrics & logs dashboard    | 9090 | devops                |
 
 ---
@@ -55,8 +58,8 @@ Use service names as hostnames for API calls and DB access:
 
 ### ✅ Examples:
 
-* `http://order-service:8081/api/orders`
-* `http://inventory-service:8082/api/stock`
+* `http://order:8081/api/orders`
+* `http://inventory:8082/api/stock`
 * `http://chatbot:8090/process`
 * `postgres://postgres:5432` (not `localhost:5532`)
 * Kafka: `kafka:9092`

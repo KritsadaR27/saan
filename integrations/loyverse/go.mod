@@ -6,7 +6,6 @@ toolchain go1.23.10
 
 require (
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/gorilla/mux v1.8.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/segmentio/kafka-go v0.4.47
 	golang.org/x/time v0.12.0

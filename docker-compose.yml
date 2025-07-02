@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-saan_password}
       POSTGRES_DB: ${POSTGRES_DB:-saan_db}
     ports:
-      - "5532:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/database/migrations:/migrations
@@ -37,41 +37,58 @@ services:
       timeout: 5s
       retries: 5
 
-  # Message Bus
-  zookeeper:
-    image: wurstmeister/zookeeper:latest
-    container_name: zookeeper
-    ports:
-      - "2181:2181"
-    networks:
-      - saan-network
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2181"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
+  # Message Bus - Kafka in KRaft Mode (No Zookeeper)
   kafka:
-    image: wurstmeister/kafka:latest
+    image: confluentinc/cp-kafka:7.4.0
     container_name: kafka
+    hostname: kafka
     environment:
-      KAFKA_ADVERTISED_HOST_NAME: kafka
-      KAFKA_ADVERTISED_PORT: 9092
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # KRaft Mode Configuration
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      
+      # Cluster Configuration
+      CLUSTER_ID: '4L6g3nShT-eMCtK--X86sw'
+      
+      # Topic and Replication Configuration
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_IN_SYNC_REPLICAS: 1
+      
+      # Performance and Storage Configuration
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000
+      KAFKA_LOG_CLEANUP_POLICY: 'delete'
+      
+      # JVM Configuration
+      KAFKA_HEAP_OPTS: '-Xmx1G -Xms1G'
+      
+      # Development Configuration
+      KAFKA_LOG4J_LOGGERS: 'kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO'
+      KAFKA_LOG4J_ROOT_LOGLEVEL: 'WARN'
     ports:
       - "9092:9092"
-    depends_on:
-      zookeeper:
-        condition: service_healthy
+      - "9093:9093"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     networks:
       - saan-network
     healthcheck:
-      test: ["CMD", "kafka-topics.sh", "--zookeeper", "zookeeper:2181", "--list"]
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 120s
 
   # Go Microservices
   order:
@@ -101,9 +118,88 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     networks:
       - saan-network
     restart: unless-stopped
+
+  customer:
+    build:
+      context: ./services/customer
+      dockerfile: Dockerfile
+    container_name: customer
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8110
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - LOYVERSE_API_KEY=${LOYVERSE_API_KEY:-}
+    ports:
+      - "8110:8110"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8110/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Inventory Business Intelligence Service  
+  inventory:
+    build:
+      context: ./services/inventory
+      dockerfile: Dockerfile
+    container_name: inventory
+    env_file:
+      - .env.local
+    environment:
+      - PORT=8082
+      - GO_ENV=development
+      - DATABASE_URL=postgres://saan:saan_password@postgres:5432/saan_db?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_CONSUMER_GROUP=inventory-service
+      - LOYVERSE_EVENT_TOPIC=loyverse-events
+      - ORDER_SERVICE_URL=http://order:8081
+      - CHAT_SERVICE_URL=http://chatbot:8090
+      - ADMIN_TOKEN=saan-dev-admin-2024-secure
+      - LOG_LEVEL=debug
+      - LOG_FORMAT=json
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Integrations
   loyverse:
@@ -117,7 +213,7 @@ services:
       - REDIS_ADDR=redis:6379
       - KAFKA_BROKERS=kafka:9092
       - KAFKA_TOPIC=loyverse-events
-      - PORT=8091
+      - PORT=8100
       - TZ=Asia/Bangkok
       # Master Data Sync (ทุก 12 ชั่วโมง - ไม่ค่อยเปลี่ยน)
       - CATEGORY_SYNC_INTERVAL=0 */12 * * *      # ทุก 12 ชม
@@ -131,9 +227,9 @@ services:
       - RECEIPT_SYNC_INTERVAL=0 */2 * * *        # ทุก 2 ชม (มี webhook แล้ว)
       - CUSTOMER_SYNC_INTERVAL=0 */8 * * *       # ทุก 8 ชม (มี webhook แล้ว)
     ports:
-      - "8091:8091"
-    volumes:
-      - ./integrations/loyverse:/app
+      - "8100:8100"
+    # volumes:
+    #   - ./integrations/loyverse:/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -260,6 +356,128 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Shipping Service (8086)
+  shipping:
+    build:
+      context: ./services/shipping
+      dockerfile: Dockerfile
+    container_name: shipping
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8086
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - CUSTOMER_SERVICE_URL=http://customer:8110
+      - ORDER_SERVICE_URL=http://order:8081
+    ports:
+      - "8086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Payment Service (8087)
+  payment:
+    build:
+      context: ./services/payment
+      dockerfile: Dockerfile
+    container_name: payment
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8087
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - OMISE_PUBLIC_KEY=${OMISE_PUBLIC_KEY:-}
+      - OMISE_SECRET_KEY=${OMISE_SECRET_KEY:-}
+      - C2P_MERCHANT_ID=${C2P_MERCHANT_ID:-}
+      - C2P_SECRET_KEY=${C2P_SECRET_KEY:-}
+    ports:
+      - "8087:8087"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8087/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Finance Service (8085)
+  finance:
+    build:
+      context: ./services/finance
+      dockerfile: Dockerfile
+    container_name: finance
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8085
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - PAYMENT_SERVICE_URL=http://payment:8087
+      - ORDER_SERVICE_URL=http://order:8081
+      - PROFIT_PERCENTAGE=30.00
+      - OWNER_PAY_PERCENTAGE=20.00
+      - TAX_PERCENTAGE=15.00
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/health"]
       interval: 30s
       timeout: 10s
       retries: 3

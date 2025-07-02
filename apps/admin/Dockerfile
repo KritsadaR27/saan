@@ -1,17 +1,43 @@
 # Build stage
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
+
+# Set build-time arguments for optimization
+ARG NODE_ENV=production
+ARG NEXT_TELEMETRY_DISABLED=1
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-RUN npm ci --only=production
+# Install dependencies for building
+RUN apk add --no-cache libc6-compat
 
-# Copy source code
+# Copy package files first for better Docker layer caching
+COPY package*.json ./
+COPY yarn.lock* ./
+
+# Install dependencies with proper flags for production build
+RUN \
+  if [ -f yarn.lock ]; then yarn --frozen-lockfile --production=false; \
+  elif [ -f package-lock.json ]; then npm ci; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i; \
+  else echo "Warning: Lockfile not found. Consider using a lockfile for better reproducibility." && npm install; \
+  fi
+
+# Copy source code and shared packages
 COPY . .
 
-# Build the application
-RUN npm run build
+# Copy shared packages from monorepo
+COPY ../../packages ./packages
+
+# Disable Next.js telemetry during build
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# Build the application with optimizations
+RUN \
+  if [ -f yarn.lock ]; then yarn build; \
+  elif [ -f package-lock.json ]; then npm run build; \
+  elif [ -f pnpm-lock.yaml ]; then pnpm build; \
+  else npm run build; \
+  fi
 
 # Production stage
 FROM node:18-alpine AS runner

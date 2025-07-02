@@ -11,8 +11,7 @@ import (
 	"integrations/loyverse/internal/connector"
 	"integrations/loyverse/internal/events"
 	"integrations/loyverse/internal/models"
-
-	"github.com/go-redis/redis/v8"
+	"integrations/loyverse/internal/redis"
 )
 
 type PaymentTypeSync struct {
@@ -58,29 +57,37 @@ func (s *PaymentTypeSync) Sync(ctx context.Context) error {
 		domainEvents = append(domainEvents, event)
 		processedCount++
 
-		// Cache payment type data
+		// Cache payment type data with enhanced error handling
 		cacheKey := fmt.Sprintf("loyverse:payment_type:%s", paymentType.ID)
-		s.redis.Set(ctx, cacheKey, raw, 24*time.Hour)
+		if err := s.redis.SafeSet(ctx, cacheKey, raw, 24*time.Hour); err != nil {
+			log.Printf("Error caching payment type %s: %v", paymentType.ID, err)
+		}
 
 		// Group by type
 		paymentTypesByType[paymentType.Type] = append(paymentTypesByType[paymentType.Type], paymentType)
 	}
 
-	// Cache payment types by type for quick lookup
+	// Cache payment types by type for quick lookup with enhanced error handling
 	for typeKey, types := range paymentTypesByType {
 		groupKey := fmt.Sprintf("loyverse:payment_types:by_type:%s", typeKey)
 		groupData, _ := json.Marshal(types)
-		s.redis.Set(ctx, groupKey, groupData, 24*time.Hour)
+		if err := s.redis.SafeSet(ctx, groupKey, groupData, 24*time.Hour); err != nil {
+			log.Printf("Error caching payment types by type %s: %v", typeKey, err)
+		}
 	}
 
-	// Cache all payment types for quick access
+	// Cache all payment types for quick access with enhanced error handling
 	allKey := "loyverse:payment_types:all"
 	allData, _ := json.Marshal(rawData)
-	s.redis.Set(ctx, allKey, allData, 24*time.Hour)
+	if err := s.redis.SafeSet(ctx, allKey, allData, 24*time.Hour); err != nil {
+		log.Printf("Error caching all payment types: %v", err)
+	}
 
-	// Update payment type count
+	// Update payment type count with enhanced error handling
 	countKey := "loyverse:sync:count:payment_types"
-	s.redis.Set(ctx, countKey, processedCount, 0)
+	if err := s.redis.SafeSet(ctx, countKey, processedCount, 0); err != nil {
+		log.Printf("Error updating payment type count: %v", err)
+	}
 
 	// Publish events
 	if len(domainEvents) > 0 {

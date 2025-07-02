@@ -8,10 +8,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"integrations/loyverse/internal/connector"
 	"integrations/loyverse/internal/events"
 	"integrations/loyverse/internal/models"
+	"integrations/loyverse/internal/redis"
 )
 
 type ProductSync struct {
@@ -33,9 +33,16 @@ func NewProductSync(client *connector.Client, publisher *events.Publisher, redis
 func (s *ProductSync) Sync(ctx context.Context) error {
 	log.Println("Starting product sync...")
 	
-	// Get last sync time
+	// Test Redis connection first with enhanced error handling
+	if !s.redis.IsHealthy() {
+		log.Println("WARNING: Redis is currently unhealthy, continuing with degraded functionality")
+	} else {
+		log.Println("Redis connection verified and healthy")
+	}
+	
+	// Get last sync time (for future use)
 	lastSyncKey := "loyverse:sync:product:last"
-	lastSync, _ := s.redis.Get(ctx, lastSyncKey).Result()
+	// lastSync, _ := s.redis.SafeGet(ctx, lastSyncKey) // Disabled for testing
 	
 	// Fetch products
 	rawData, err := s.client.GetProducts(ctx)
@@ -46,41 +53,65 @@ func (s *ProductSync) Sync(ctx context.Context) error {
 	var domainEvents []events.DomainEvent
 	processedCount := 0
 	
-	for _, raw := range rawData {
+	for i, raw := range rawData {
+		// Debug: Log the first few raw items to understand structure
+		if i < 3 {
+			log.Printf("DEBUG: Raw item %d: %s", i, string(raw))
+		}
+		
 		var item models.Item
 		if err := json.Unmarshal(raw, &item); err != nil {
-			log.Printf("Error unmarshaling item: %v", err)
+			log.Printf("Error unmarshaling item %d: %v", i, err)
+			if i < 3 {
+				log.Printf("DEBUG: Failed raw item %d: %s", i, string(raw))
+			}
 			continue
 		}
 		
-		// Skip if not updated since last sync
-		if lastSync != "" {
-			lastSyncTime, _ := time.Parse(time.RFC3339, lastSync)
-			if item.UpdatedAt.Before(lastSyncTime) {
-				continue
-			}
+	// For testing: Sync all products (skip time filter)
+	// TODO: Re-enable time filter for production
+	/*
+	// Skip if not updated since last sync
+	if lastSync != "" {
+		lastSyncTime, _ := time.Parse(time.RFC3339, lastSync)
+		if item.UpdatedAt.Before(lastSyncTime) {
+			continue
 		}
+	}
+	*/
 		
 		// Create domain event
 		event := s.createProductEvent(item)
 		domainEvents = append(domainEvents, event)
 		processedCount++
 		
-		// Cache product data
+		// Cache product data with enhanced error handling
 		cacheKey := fmt.Sprintf("loyverse:product:%s", item.ID)
-		s.redis.Set(ctx, cacheKey, raw, 24*time.Hour)
+		if err := s.redis.SafeSet(ctx, cacheKey, raw, 24*time.Hour); err != nil {
+			log.Printf("Error caching product %s: %v", item.ID, err)
+		} else {
+			log.Printf("Successfully cached product %s with key %s", item.ID, cacheKey)
+		}
 		
-		// Cache variants
+		// Cache variants with enhanced error handling
 		for _, variant := range item.Variants {
 			variantKey := fmt.Sprintf("loyverse:variant:%s", variant.ID)
 			variantData, _ := json.Marshal(variant)
-			s.redis.Set(ctx, variantKey, variantData, 24*time.Hour)
+			if err := s.redis.SafeSet(ctx, variantKey, variantData, 24*time.Hour); err != nil {
+				log.Printf("Error caching variant %s: %v", variant.ID, err)
+			} else {
+				log.Printf("Successfully cached variant %s with key %s", variant.ID, variantKey)
+			}
 		}
 	}
 	
-	// Update product count
+	// Update product count with enhanced error handling
 	countKey := "loyverse:sync:count:products"
-	s.redis.Set(ctx, countKey, processedCount, 0)
+	if err := s.redis.SafeSet(ctx, countKey, processedCount, 0); err != nil {
+		log.Printf("Error updating product count: %v", err)
+	} else {
+		log.Printf("Successfully updated product count: %d", processedCount)
+	}
 	
 	// Publish events
 	if len(domainEvents) > 0 {
@@ -89,8 +120,12 @@ func (s *ProductSync) Sync(ctx context.Context) error {
 		}
 	}
 	
-	// Update last sync time
-	s.redis.Set(ctx, lastSyncKey, time.Now().Format(time.RFC3339), 0)
+	// Update last sync time with enhanced error handling
+	if err := s.redis.SafeSet(ctx, lastSyncKey, time.Now().Format(time.RFC3339), 0); err != nil {
+		log.Printf("Error updating last sync time: %v", err)
+	} else {
+		log.Printf("Successfully updated last sync time")
+	}
 	
 	log.Printf("Product sync completed. Processed %d products", processedCount)
 	return nil

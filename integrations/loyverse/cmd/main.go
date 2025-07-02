@@ -14,9 +14,10 @@ import (
 	"integrations/loyverse/config"
 	"integrations/loyverse/internal/connector"
 	"integrations/loyverse/internal/events"
+	"integrations/loyverse/internal/models"
+	"integrations/loyverse/internal/redis"
+	"integrations/loyverse/internal/repository"
 	"integrations/loyverse/internal/sync"
-
-	"github.com/go-redis/redis/v8"
 )
 
 func main() {
@@ -34,12 +35,15 @@ func main() {
 	log.Printf("Redis: %s", cfg.RedisAddr)
 	log.Printf("Kafka: %s", cfg.KafkaBrokers)
 
-	// Initialize Redis client
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: cfg.RedisAddr,
-		DB:   0,
-	})
+	// Initialize enhanced Redis client
+	redisConfig := redis.DefaultConfig()
+	redisConfig.Addr = cfg.RedisAddr
+	redisClient := redis.NewClient(redisConfig)
 	defer redisClient.Close()
+	
+	// Initialize Redis repository with enhanced error handling
+	cacheRepo := repository.NewRedisRepository(redisConfig)
+	defer cacheRepo.Close()
 
 	// Initialize Kafka event publisher
 	publisher := events.NewPublisher(cfg.KafkaBrokers, cfg.KafkaTopic)
@@ -55,17 +59,21 @@ func main() {
 	defer syncCancel()
 	
 	go func() {
-		log.Println("Extended sync manager started")
+		log.Println("Enhanced sync manager started with Redis error handling")
 		
 		// Run sync every 5 minutes for testing
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		
-		// Run initial sync
+		// Run initial sync with enhanced error handling
 		log.Println("Starting initial sync...")
 		if err := productSync.Sync(syncCtx); err != nil {
 			log.Printf("Product sync error: %v", err)
 		}
+		
+		// Log Redis stats periodically
+		statsTicker := time.NewTicker(30 * time.Second)
+		defer statsTicker.Stop()
 		
 		for {
 			select {
@@ -73,6 +81,13 @@ func main() {
 				log.Println("Running scheduled sync...")
 				if err := productSync.Sync(syncCtx); err != nil {
 					log.Printf("Product sync error: %v", err)
+				}
+			case <-statsTicker.C:
+				// Log Redis health stats
+				if redisClient.IsHealthy() {
+					redisClient.LogStats()
+				} else {
+					log.Println("Redis is currently unhealthy")
 				}
 			case <-syncCtx.Done():
 				return
@@ -86,11 +101,41 @@ func main() {
 		fmt.Fprintf(w, `{"status":"received","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
 	})
 
-	// Setup HTTP routes
+	// Setup HTTP routes with enhanced health checks
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		
+		// Check Redis health
+		redisHealthy := redisClient.IsHealthy()
+		
+		status := "healthy"
+		statusCode := http.StatusOK
+		if !redisHealthy {
+			status = "degraded"
+			statusCode = http.StatusServiceUnavailable
+		}
+		
+		healthResponse := map[string]interface{}{
+			"status":     status,
+			"service":    "loyverse-integration",
+			"timestamp":  time.Now().Format(time.RFC3339),
+			"redis": map[string]interface{}{
+				"healthy": redisHealthy,
+				"stats":   cacheRepo.GetHealthStats(),
+			},
+		}
+		
+		w.WriteHeader(statusCode)
+		json.NewEncoder(w).Encode(healthResponse)
+	})
+
+	// Redis health endpoint
+	http.HandleFunc("/health/redis", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		
+		stats := cacheRepo.GetHealthStats()
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"healthy","service":"loyverse-integration","timestamp":"%s"}`, time.Now().Format(time.RFC3339))
+		json.NewEncoder(w).Encode(stats)
 	})
 
 	// Webhook endpoint for Loyverse
@@ -118,6 +163,231 @@ func main() {
 	// API endpoint to get all categories (disabled temporarily)
 	http.HandleFunc("/api/categories", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Endpoint temporarily disabled", http.StatusServiceUnavailable)
+	})
+
+	// API endpoint to get items from Loyverse
+	http.HandleFunc("/api/items", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if cfg.LoyverseAPIToken == "" {
+			http.Error(w, "Loyverse API token not configured", http.StatusBadRequest)
+			return
+		}
+
+		// Create Loyverse API client
+		client := connector.NewClient(cfg.LoyverseAPIToken)
+		ctx := context.Background()
+
+		// Fetch stores first to get store name
+		stores, err := client.GetStores(ctx)
+		if err != nil {
+			log.Printf("[loyverse-connector] ❌ Failed to fetch stores: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to fetch stores: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		var storeName string = "Unknown Store"
+		if len(stores) > 0 {
+			var firstStore models.Store
+			if err := json.Unmarshal(stores[0], &firstStore); err == nil {
+				storeName = firstStore.Name
+			}
+		}
+
+		// Fetch items
+		rawItems, err := client.GetProducts(ctx)
+		if err != nil {
+			log.Printf("[loyverse-connector] ❌ Failed to fetch items: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to fetch items: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Parse items and collect data
+		var items []map[string]interface{}
+		var firstItemName, firstSKU string
+
+		for i, raw := range rawItems {
+			var item models.Item
+			if err := json.Unmarshal(raw, &item); err != nil {
+				log.Printf("[loyverse-connector] ⚠️ Error unmarshaling item %d: %v", i, err)
+				continue
+			}
+
+			// Get first item info for logging
+			if i == 0 {
+				firstItemName = item.Name
+				firstSKU = item.SKU
+				if firstSKU == "" && len(item.Variants) > 0 {
+					firstSKU = item.Variants[0].SKU
+				}
+			}
+
+			// Prepare item data for response
+			itemData := map[string]interface{}{
+				"id":          item.ID,
+				"name":        item.Name,
+				"description": item.Description,
+				"sku":         item.SKU,
+				"barcode":     item.Barcode,
+				"category_id": item.CategoryID,
+				"track_stock": item.TrackStock,
+				"created_at":  item.CreatedAt,
+				"updated_at":  item.UpdatedAt,
+			}
+
+			// Add variants if available
+			if len(item.Variants) > 0 {
+				variants := make([]map[string]interface{}, 0, len(item.Variants))
+				for _, variant := range item.Variants {
+					variants = append(variants, map[string]interface{}{
+						"variant_id":    variant.ID,
+						"sku":           variant.SKU,
+						"barcode":       variant.Barcode,
+						"default_price": variant.DefaultPrice,
+						"cost":          variant.Cost,
+					})
+				}
+				itemData["variants"] = variants
+			}
+
+			items = append(items, itemData)
+		}
+
+		// Logging
+		log.Printf("[loyverse-connector] ✅ Pulled %d items from Loyverse store: '%s'", len(rawItems), storeName)
+		if firstItemName != "" {
+			log.Printf("[loyverse-connector] 🛒 First item: %s [SKU: %s]", firstItemName, firstSKU)
+		}
+
+		// Response
+		response := map[string]interface{}{
+			"success":    true,
+			"count":      len(items),
+			"store_name": storeName,
+			"items":      items,
+			"timestamp":  time.Now().Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("[loyverse-connector] ❌ Error encoding response: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	})
+
+	// API endpoint to get inventory from Loyverse
+	http.HandleFunc("/api/inventory", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if cfg.LoyverseAPIToken == "" {
+			http.Error(w, "Loyverse API token not configured", http.StatusBadRequest)
+			return
+		}
+
+		// Create Loyverse API client
+		client := connector.NewClient(cfg.LoyverseAPIToken)
+		ctx := context.Background()
+
+		// Fetch stores first to get store names
+		stores, err := client.GetStores(ctx)
+		if err != nil {
+			log.Printf("[loyverse-connector] ❌ Failed to fetch stores: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to fetch stores: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Create store map for lookups
+		storeMap := make(map[string]string)
+		var mainStoreName string = "Unknown Store"
+		if len(stores) > 0 {
+			var firstStore models.Store
+			if err := json.Unmarshal(stores[0], &firstStore); err == nil {
+				mainStoreName = firstStore.Name
+			}
+		}
+
+		for _, storeData := range stores {
+			var store models.Store
+			if err := json.Unmarshal(storeData, &store); err == nil {
+				storeMap[store.ID] = store.Name
+			}
+		}
+
+		// Fetch inventory
+		rawInventory, err := client.GetInventoryLevels(ctx)
+		if err != nil {
+			log.Printf("[loyverse-connector] ❌ Failed to fetch inventory: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to fetch inventory: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Parse inventory and collect data
+		var inventory []map[string]interface{}
+		var firstVariantID, firstStoreID string
+		var firstQuantity float64
+
+		for i, raw := range rawInventory {
+			var invLevel models.InventoryLevel
+			if err := json.Unmarshal(raw, &invLevel); err != nil {
+				log.Printf("[loyverse-connector] ⚠️ Error unmarshaling inventory %d: %v", i, err)
+				continue
+			}
+
+			// Get first inventory info for logging
+			if i == 0 {
+				firstVariantID = invLevel.VariantID
+				firstStoreID = invLevel.StoreID
+				firstQuantity = invLevel.InStock
+			}
+
+			// Get store name
+			storeName := storeMap[invLevel.StoreID]
+			if storeName == "" {
+				storeName = invLevel.StoreID
+			}
+
+			// Prepare inventory data for response
+			inventoryData := map[string]interface{}{
+				"variant_id":   invLevel.VariantID,
+				"store_id":     invLevel.StoreID,
+				"store_name":   storeName,
+				"in_stock":     invLevel.InStock,
+				"updated_at":   invLevel.UpdatedAt,
+			}
+
+			inventory = append(inventory, inventoryData)
+		}
+
+		// Logging
+		log.Printf("[loyverse-connector] ✅ Pulled %d inventory levels from Loyverse store: '%s'", len(rawInventory), mainStoreName)
+		if firstVariantID != "" {
+			storeDisplayName := storeMap[firstStoreID]
+			if storeDisplayName == "" {
+				storeDisplayName = firstStoreID
+			}
+			log.Printf("[loyverse-connector] 🧾 Stock: %s @ store=%s = %.0f", firstVariantID, storeDisplayName, firstQuantity)
+		}
+
+		// Response
+		response := map[string]interface{}{
+			"success":    true,
+			"count":      len(inventory),
+			"store_name": mainStoreName,
+			"inventory":  inventory,
+			"timestamp":  time.Now().Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("[loyverse-connector] ❌ Error encoding response: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
 	})
 
 	// API endpoint to fetch categories from Loyverse API directly
@@ -345,6 +615,8 @@ func main() {
 	log.Println("Registered endpoints:")
 	log.Println("  GET  /health")
 	log.Println("  POST /webhook/loyverse")
+	log.Println("  GET  /api/items")
+	log.Println("  GET  /api/inventory") 
 	log.Println("  GET  /api/latest-receipt")
 	log.Println("  GET  /api/categories")
 	log.Println("  POST /api/categories/fetch")

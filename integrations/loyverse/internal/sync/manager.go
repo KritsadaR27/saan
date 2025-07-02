@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/robfig/cron/v3"
+	"integrations/loyverse/internal/redis"
 )
 
 // Manager manages all synchronization tasks
