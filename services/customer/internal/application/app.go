@@ -13,7 +13,8 @@ import (
 
 // Application holds all application services
 type Application struct {
-	CustomerService domain.CustomerService
+	CustomerService    domain.CustomerService
+	ThaiAddressService domain.ThaiAddressService
 }
 
 // New creates a new application instance
@@ -48,7 +49,10 @@ func New(
 		logger,
 	)
 
+	thaiAddressService := NewThaiAddressService(thaiAddressRepo, logger)
+
 	return &Application{
-		CustomerService: customerService,
+		CustomerService:    customerService,
+		ThaiAddressService: thaiAddressService,
 	}
 }

@@ -1,4 +1,6 @@
 # Saan System - Development Environment
+# Following PROJECT_RULES.md standards for consistent naming and service discovery
+
 services:
   # Database Services
   postgres:
@@ -90,7 +92,90 @@ services:
       retries: 5
       start_period: 120s
 
-  # Go Microservices
+  # Frontend Applications
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: web
+    environment:
+      - PORT=3008
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8081
+    ports:
+      - "3008:3008"
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3008"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    container_name: admin
+    environment:
+      - PORT=3010
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8081
+    ports:
+      - "3010:3010"
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3010"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Core Microservices
+  # Chat Service (8090) - AI / Rule-based reply engine
+  chat:
+    build:
+      context: ./services/chat
+      dockerfile: Dockerfile
+    container_name: chat
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8090
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      # Service URLs (following PROJECT_RULES standards)
+      - CUSTOMER_SERVICE_URL=http://customer:8110
+      - ORDER_SERVICE_URL=http://order:8081
+      - INVENTORY_SERVICE_URL=http://inventory:8082
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Order Service (8081) - Manages all order logic
   order:
     build:
       context: ./services/order
@@ -107,44 +192,16 @@ services:
       - DB_SSLMODE=disable
       - SERVER_PORT=8081
       - GO_ENV=development
-      - CHAT_SERVICE_URL=http://chatbot:8090
-      - INVENTORY_SERVICE_URL=http://inventory:8082
-    ports:
-      - "8081:8081"
-    volumes:
-      - ./services/order:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - saan-network
-    restart: unless-stopped
-
-  customer:
-    build:
-      context: ./services/customer
-      dockerfile: Dockerfile
-    container_name: customer
-    env_file:
-      - .env.local
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=saan
-      - DB_PASSWORD=saan_password
-      - DB_NAME=saan_db
-      - DB_SSLMODE=disable
-      - SERVER_PORT=8110
-      - GO_ENV=development
       - REDIS_ADDR=redis:6379
       - KAFKA_BROKERS=kafka:9092
-      - LOYVERSE_API_KEY=${LOYVERSE_API_KEY:-}
+      # Service URLs (following PROJECT_RULES standards)
+      - CHAT_SERVICE_URL=http://chat:8090
+      - INVENTORY_SERVICE_URL=http://inventory:8082
+      - CUSTOMER_SERVICE_URL=http://customer:8110
+      - PAYMENT_SERVICE_URL=http://payment:8087
+      - SHIPPING_SERVICE_URL=http://shipping:8086
     ports:
-      - "8110:8110"
+      - "8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,12 +213,52 @@ services:
       - saan-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8110/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # Inventory Business Intelligence Service  
+  # Product Service (8083) - Manages products, pricing, and availability
+  product:
+    build:
+      context: ./services/product
+      dockerfile: Dockerfile
+    container_name: product
+    env_file:
+      - .env.local
+    environment:
+      - PORT=8083
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BROKERS=kafka:9092
+      - LOYVERSE_SERVICE_URL=http://loyverse:8100
+      - ORDER_SERVICE_URL=http://order:8081
+      - INVENTORY_SERVICE_URL=http://inventory:8082
+      - CUSTOMER_SERVICE_URL=http://customer:8084
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Inventory Service (8082) - Manages stock and warehouse
   inventory:
     build:
       context: ./services/inventory
@@ -178,8 +275,10 @@ services:
       - KAFKA_BROKERS=kafka:9092
       - KAFKA_CONSUMER_GROUP=inventory-service
       - LOYVERSE_EVENT_TOPIC=loyverse-events
+      # Service URLs (following PROJECT_RULES standards)
       - ORDER_SERVICE_URL=http://order:8081
-      - CHAT_SERVICE_URL=http://chatbot:8090
+      - CHAT_SERVICE_URL=http://chat:8090
+      - LOYVERSE_SERVICE_URL=http://loyverse:8100
       - ADMIN_TOKEN=saan-dev-admin-2024-secure
       - LOG_LEVEL=debug
       - LOG_FORMAT=json
@@ -201,12 +300,181 @@ services:
       timeout: 10s
       retries: 3
 
-  # Integrations
+  # Customer Service (8110) - Customer profile & loyalty system
+  customer:
+    build:
+      context: ./services/customer
+      dockerfile: Dockerfile
+    container_name: customer
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8110
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      # Service URLs (following PROJECT_RULES standards)
+      - ORDER_SERVICE_URL=http://order:8081
+      - LOYVERSE_SERVICE_URL=http://loyverse:8100
+      - LOYVERSE_API_KEY=${LOYVERSE_API_KEY:-}
+    ports:
+      - "8110:8110"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8110/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Shipping Service (8086) - Delivery & routing logic
+  shipping:
+    build:
+      context: ./services/shipping
+      dockerfile: Dockerfile
+    container_name: shipping
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8086
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      # Service URLs (following PROJECT_RULES standards)
+      - CUSTOMER_SERVICE_URL=http://customer:8110
+      - ORDER_SERVICE_URL=http://order:8081
+    ports:
+      - "8086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Payment Service (8087) - Payment verification & QR
+  payment:
+    build:
+      context: ./services/payment
+      dockerfile: Dockerfile
+    container_name: payment
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8087
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      # Service URLs (following PROJECT_RULES standards)
+      - ORDER_SERVICE_URL=http://order:8081
+      - FINANCE_SERVICE_URL=http://finance:8085
+      - OMISE_PUBLIC_KEY=${OMISE_PUBLIC_KEY:-}
+      - OMISE_SECRET_KEY=${OMISE_SECRET_KEY:-}
+      - C2P_MERCHANT_ID=${C2P_MERCHANT_ID:-}
+      - C2P_SECRET_KEY=${C2P_SECRET_KEY:-}
+    ports:
+      - "8087:8087"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8087/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Finance Service (8085) - Profit / accounting
+  finance:
+    build:
+      context: ./services/finance
+      dockerfile: Dockerfile
+    container_name: finance
+    env_file:
+      - .env.local
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=saan
+      - DB_PASSWORD=saan_password
+      - DB_NAME=saan_db
+      - DB_SSLMODE=disable
+      - SERVER_PORT=8085
+      - GO_ENV=development
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      # Service URLs (following PROJECT_RULES standards)
+      - PAYMENT_SERVICE_URL=http://payment:8087
+      - ORDER_SERVICE_URL=http://order:8081
+      - PROFIT_PERCENTAGE=30.00
+      - OWNER_PAY_PERCENTAGE=20.00
+      - TAX_PERCENTAGE=15.00
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - saan-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Integration Services
+  # Loyverse Integration (8100) - Loyverse API data sync connector
   loyverse:
     build:
       context: ./integrations/loyverse
       dockerfile: Dockerfile
-    container_name: loyverse-integration
+    container_name: loyverse
     env_file:
       - .env.local
     environment:
@@ -215,6 +483,10 @@ services:
       - KAFKA_TOPIC=loyverse-events
       - PORT=8100
       - TZ=Asia/Bangkok
+      # Service URLs (following PROJECT_RULES standards)
+      - PRODUCT_SERVICE_URL=http://loyverse:8100
+      - CUSTOMER_SERVICE_URL=http://customer:8110
+      - INVENTORY_SERVICE_URL=http://inventory:8082
       # Master Data Sync (ทุก 12 ชั่วโมง - ไม่ค่อยเปลี่ยน)
       - CATEGORY_SYNC_INTERVAL=0 */12 * * *      # ทุก 12 ชม
       - SUPPLIER_SYNC_INTERVAL=0 */12 * * *      # ทุก 12 ชม  
@@ -228,8 +500,6 @@ services:
       - CUSTOMER_SYNC_INTERVAL=0 */8 * * *       # ทุก 8 ชม (มี webhook แล้ว)
     ports:
       - "8100:8100"
-    # volumes:
-    #   - ./integrations/loyverse:/app
     depends_on:
       postgres:
         condition: service_healthy
@@ -240,8 +510,14 @@ services:
     networks:
       - saan-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # Webhook Services
+  # Loyverse Webhook (8093) - Handles Loyverse POS webhooks
   loyverse-webhook:
     build:
       context: ./webhooks/loyverse-webhook
@@ -270,6 +546,7 @@ services:
       timeout: 10s
       retries: 3
 
+  # Chat Webhook (8094) - FB/LINE message webhooks
   chat-webhook:
     build:
       context: ./webhooks/chat-webhook
@@ -302,6 +579,7 @@ services:
       timeout: 10s
       retries: 3
 
+  # Delivery Webhook (8095) - Grab/LineMan status webhooks
   delivery-webhook:
     build:
       context: ./webhooks/delivery-webhook
@@ -331,6 +609,7 @@ services:
       timeout: 10s
       retries: 3
 
+  # Payment Webhook (8096) - Payment gateway webhooks
   payment-webhook:
     build:
       context: ./webhooks/payment-webhook
@@ -356,128 +635,6 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8096/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Shipping Service (8086)
-  shipping:
-    build:
-      context: ./services/shipping
-      dockerfile: Dockerfile
-    container_name: shipping
-    env_file:
-      - .env.local
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=saan
-      - DB_PASSWORD=saan_password
-      - DB_NAME=saan_db
-      - DB_SSLMODE=disable
-      - SERVER_PORT=8086
-      - GO_ENV=development
-      - REDIS_ADDR=redis:6379
-      - KAFKA_BROKERS=kafka:9092
-      - CUSTOMER_SERVICE_URL=http://customer:8110
-      - ORDER_SERVICE_URL=http://order:8081
-    ports:
-      - "8086:8086"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - saan-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8086/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Payment Service (8087)
-  payment:
-    build:
-      context: ./services/payment
-      dockerfile: Dockerfile
-    container_name: payment
-    env_file:
-      - .env.local
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=saan
-      - DB_PASSWORD=saan_password
-      - DB_NAME=saan_db
-      - DB_SSLMODE=disable
-      - SERVER_PORT=8087
-      - GO_ENV=development
-      - REDIS_ADDR=redis:6379
-      - KAFKA_BROKERS=kafka:9092
-      - OMISE_PUBLIC_KEY=${OMISE_PUBLIC_KEY:-}
-      - OMISE_SECRET_KEY=${OMISE_SECRET_KEY:-}
-      - C2P_MERCHANT_ID=${C2P_MERCHANT_ID:-}
-      - C2P_SECRET_KEY=${C2P_SECRET_KEY:-}
-    ports:
-      - "8087:8087"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - saan-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8087/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Finance Service (8085)
-  finance:
-    build:
-      context: ./services/finance
-      dockerfile: Dockerfile
-    container_name: finance
-    env_file:
-      - .env.local
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=saan
-      - DB_PASSWORD=saan_password
-      - DB_NAME=saan_db
-      - DB_SSLMODE=disable
-      - SERVER_PORT=8085
-      - GO_ENV=development
-      - REDIS_ADDR=redis:6379
-      - KAFKA_BROKERS=kafka:9092
-      - PAYMENT_SERVICE_URL=http://payment:8087
-      - ORDER_SERVICE_URL=http://order:8081
-      - PROFIT_PERCENTAGE=30.00
-      - OWNER_PAY_PERCENTAGE=20.00
-      - TAX_PERCENTAGE=15.00
-    ports:
-      - "8085:8085"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    networks:
-      - saan-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/health"]
       interval: 30s
       timeout: 10s
       retries: 3

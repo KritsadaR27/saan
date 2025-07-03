@@ -400,3 +400,29 @@ func (h *CustomerHandler) SyncWithLoyverse(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Customer synced with Loyverse successfully"})
 }
+
+// GetAddressSuggestions returns address suggestions based on query
+func (h *CustomerHandler) GetAddressSuggestions(c *gin.Context) {
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Query parameter 'q' is required"})
+		return
+	}
+
+	limitStr := c.DefaultQuery("limit", "10")
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 || limit > 50 {
+		limit = 10
+	}
+
+	suggestions, err := h.app.ThaiAddressService.GetAddressSuggestions(c.Request.Context(), query, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get address suggestions"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"suggestions": suggestions,
+		"count":      len(suggestions),
+	})
+}

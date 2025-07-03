@@ -1,0 +1,51 @@
+# Copilot Context Optimization
+# Exclude binary and build artifacts from Copilot context
+**/bin/**
+**/build/**
+**/dist/**
+**/vendor/**
+**/tmp/**
+**/air_tmp/**
+**/.next/**
+**/.git/**
+
+# Exclude log files
+**/*.log
+**/*.tmp
+**/*.temp
+
+# Exclude large generated files
+**/coverage/**
+**/.terraform/**
+**/.docker/**
+
+# Exclude dependency files to reduce context size
+**/go.sum
+**/package-lock.json
+**/yarn.lock
+
+# Exclude Docker and infrastructure files from context
+**/Dockerfile*
+**/docker-compose*.yml
+**/.dockerignore
+
+# Exclude migration files (usually auto-generated)
+**/migrations/**
+**/seeds/**
+
+# Exclude documentation that might be large
+**/docs/**
+**/README.md
+**/LICENSE
+**/CHANGELOG.md
+
+# Exclude test data
+**/testdata/**
+**/fixtures/**
+**/mocks/**
+
+# Exclude specific large config files
+**/.golangci.yml
+**/.github/**
+**/.gitignore
+**/.gitattributes

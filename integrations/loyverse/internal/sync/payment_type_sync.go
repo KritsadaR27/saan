@@ -59,7 +59,7 @@ func (s *PaymentTypeSync) Sync(ctx context.Context) error {
 
 		// Cache payment type data with enhanced error handling
 		cacheKey := fmt.Sprintf("loyverse:payment_type:%s", paymentType.ID)
-		if err := s.redis.SafeSet(ctx, cacheKey, raw, 24*time.Hour); err != nil {
+		if err := s.redis.SafeSet(ctx, cacheKey, string(raw), 24*time.Hour); err != nil {
 			log.Printf("Error caching payment type %s: %v", paymentType.ID, err)
 		}
 
@@ -71,7 +71,7 @@ func (s *PaymentTypeSync) Sync(ctx context.Context) error {
 	for typeKey, types := range paymentTypesByType {
 		groupKey := fmt.Sprintf("loyverse:payment_types:by_type:%s", typeKey)
 		groupData, _ := json.Marshal(types)
-		if err := s.redis.SafeSet(ctx, groupKey, groupData, 24*time.Hour); err != nil {
+		if err := s.redis.SafeSet(ctx, groupKey, string(groupData), 24*time.Hour); err != nil {
 			log.Printf("Error caching payment types by type %s: %v", typeKey, err)
 		}
 	}
@@ -79,7 +79,7 @@ func (s *PaymentTypeSync) Sync(ctx context.Context) error {
 	// Cache all payment types for quick access with enhanced error handling
 	allKey := "loyverse:payment_types:all"
 	allData, _ := json.Marshal(rawData)
-	if err := s.redis.SafeSet(ctx, allKey, allData, 24*time.Hour); err != nil {
+	if err := s.redis.SafeSet(ctx, allKey, string(allData), 24*time.Hour); err != nil {
 		log.Printf("Error caching all payment types: %v", err)
 	}
 

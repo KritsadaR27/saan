@@ -233,3 +233,86 @@ func (r *thaiAddressRepository) AutoComplete(ctx context.Context, query string, 
 
 	return addresses, nil
 }
+
+// GetAddressSuggestions returns address suggestions based on query
+func (r *thaiAddressRepository) GetAddressSuggestions(ctx context.Context, query string, limit int) ([]domain.AddressSuggestion, error) {
+	// Use the existing AutoComplete functionality but format as suggestions
+	addresses, err := r.AutoComplete(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get address suggestions: %w", err)
+	}
+
+	var suggestions []domain.AddressSuggestion
+	for _, addr := range addresses {
+		suggestion := domain.AddressSuggestion{
+			ID:          addr.ID.String(),
+			DisplayText: fmt.Sprintf("%s > %s > %s (%s)", 
+				addr.Subdistrict, 
+				addr.District, 
+				addr.Province, 
+				addr.PostalCode),
+			Subdistrict: addr.Subdistrict,
+			District:    addr.District,
+			Province:    addr.Province,
+			PostalCode:  addr.PostalCode,
+		}
+
+		// Determine delivery route based on province (11 provinces for self delivery)
+		if r.isSelfDeliveryProvince(addr.Province) {
+			suggestion.DeliveryRoute = "self_delivery"
+		} else {
+			suggestion.DeliveryRoute = "third_party"
+		}
+
+		suggestions = append(suggestions, suggestion)
+	}
+
+	return suggestions, nil
+}
+
+// GetBySubdistrict returns Thai addresses by subdistrict
+func (r *thaiAddressRepository) GetBySubdistrict(ctx context.Context, subdistrict string) ([]domain.ThaiAddress, error) {
+	return r.SearchBySubdistrict(ctx, subdistrict)
+}
+
+// GetProvinceDeliveryInfo returns delivery route info for a province
+func (r *thaiAddressRepository) GetProvinceDeliveryInfo(ctx context.Context, province string) (*domain.DeliveryRoute, error) {
+	var route domain.DeliveryRoute
+	
+	// Determine route based on province
+	if r.isSelfDeliveryProvince(province) {
+		route = domain.DeliveryRoute{
+			ID:          uuid.New(),
+			Name:        "Self Delivery - Route A",
+			Description: &[]string{"Self delivery route for central provinces"}[0],
+			IsActive:    true,
+		}
+	} else {
+		route = domain.DeliveryRoute{
+			ID:          uuid.New(),
+			Name:        "Third Party Delivery",
+			Description: &[]string{"Third party carrier delivery"}[0],
+			IsActive:    true,
+		}
+	}
+	
+	return &route, nil
+}
+
+// isSelfDeliveryProvince checks if province is in self-delivery area (11 provinces)
+func (r *thaiAddressRepository) isSelfDeliveryProvince(province string) bool {
+	selfDeliveryProvinces := map[string]bool{
+		"กรุงเทพมหานคร":  true,
+		"นนทบุรี":       true,
+		"ปทุมธานี":      true,
+		"สมุทรปราการ":   true,
+		"สมุทรสาคร":     true,
+		"นครปาธม":      true,
+		"สมุทรสงคราม":   true,
+		"ฉะเชิงเทรา":    true,
+		"ระยอง":        true,
+		"ชลบุรี":       true,
+		"สระบุรี":      true,
+	}
+	return selfDeliveryProvinces[province]
+}

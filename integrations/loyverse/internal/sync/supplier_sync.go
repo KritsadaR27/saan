@@ -75,12 +75,12 @@ func (s *SupplierSync) Sync(ctx context.Context) error {
 
 		// Cache supplier data
 		cacheKey := fmt.Sprintf("loyverse:supplier:%s", supplier.ID)
-		s.redis.Set(ctx, cacheKey, raw, 24*time.Hour)
+		s.redis.Set(ctx, cacheKey, string(raw), 24*time.Hour)
 	}
 
 	// Cache active suppliers list
 	activeData, _ := json.Marshal(activeSuppliers)
-	s.redis.Set(ctx, "loyverse:suppliers:active", activeData, 24*time.Hour)
+	s.redis.Set(ctx, "loyverse:suppliers:active", string(activeData), 24*time.Hour)
 
 	// Update supplier count
 	countKey := "loyverse:sync:count:suppliers"

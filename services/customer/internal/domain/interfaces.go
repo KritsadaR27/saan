@@ -36,12 +36,17 @@ type CustomerAddressRepository interface {
 
 // ThaiAddressRepository defines the interface for Thai address operations
 type ThaiAddressRepository interface {
-	GetByID(ctx context.Context, id uuid.UUID) (*ThaiAddress, error)
+	// Address suggestions
+	GetAddressSuggestions(ctx context.Context, query string, limit int) ([]AddressSuggestion, error)
+	GetBySubdistrict(ctx context.Context, subdistrict string) ([]ThaiAddress, error)
+	GetProvinceDeliveryInfo(ctx context.Context, province string) (*DeliveryRoute, error)
+	
+	// Existing methods used by customer service
+	AutoComplete(ctx context.Context, query string, limit int) ([]ThaiAddress, error)
 	GetByPostalCode(ctx context.Context, postalCode string) ([]ThaiAddress, error)
 	SearchByProvince(ctx context.Context, province string) ([]ThaiAddress, error)
 	SearchByDistrict(ctx context.Context, district string) ([]ThaiAddress, error)
 	SearchBySubdistrict(ctx context.Context, subdistrict string) ([]ThaiAddress, error)
-	AutoComplete(ctx context.Context, query string, limit int) ([]ThaiAddress, error)
 }
 
 // DeliveryRouteRepository defines the interface for delivery route operations
@@ -120,4 +125,11 @@ type LoyverseClient interface {
 	UpdateCustomer(ctx context.Context, loyverseID string, customer *Customer) error
 	SearchCustomerByEmail(ctx context.Context, email string) (*string, error)
 	SearchCustomerByPhone(ctx context.Context, phone string) (*string, error)
+}
+
+// ThaiAddressService defines the interface for Thai address operations
+type ThaiAddressService interface {
+	GetAddressSuggestions(ctx context.Context, query string, limit int) ([]AddressSuggestion, error)
+	GetBySubdistrict(ctx context.Context, subdistrict string) ([]ThaiAddress, error)
+	GetProvinceDeliveryInfo(ctx context.Context, province string) (*DeliveryRoute, error)
 }

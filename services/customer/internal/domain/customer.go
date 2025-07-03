@@ -341,3 +341,14 @@ func (a *CustomerAddress) UnsetAsDefault() {
 	a.IsDefault = false
 	a.UpdatedAt = time.Now()
 }
+
+// AddressSuggestion represents address suggestion response
+type AddressSuggestion struct {
+	ID            string `json:"id"`
+	DisplayText   string `json:"display_text"` // "หัวหมาก > บางกะปิ > กรุงเทพมหานคร (10240)"
+	Subdistrict   string `json:"subdistrict"`
+	District      string `json:"district"`
+	Province      string `json:"province"`
+	PostalCode    string `json:"postal_code"`
+	DeliveryRoute string `json:"delivery_route,omitempty"`
+}

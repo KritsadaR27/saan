@@ -50,7 +50,7 @@ func (r *RedisRepository) Set(ctx context.Context, key string, value interface{}
 		return fmt.Errorf("marshaling value for key %s: %w", key, err)
 	}
 	
-	if err := r.client.SafeSet(ctx, key, data, expiration); err != nil {
+	if err := r.client.SafeSet(ctx, key, string(data), expiration); err != nil {
 		return fmt.Errorf("setting key %s: %w", key, err)
 	}
 	

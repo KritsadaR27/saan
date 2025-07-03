@@ -1,11 +1,10 @@
-package importaddresses
+package main
 
 import (
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -13,26 +12,38 @@ import (
 )
 
 type Province struct {
-	ProvinceCode int    `json:"provinceCode" gorm:"primaryKey"`
-	NameTh       string `json:"provinceNameTh"`
-	NameEn       string `json:"provinceNameEn"`
+	ProvinceCode int    `json:"provinceCode" gorm:"primaryKey;column:province_code"`
+	NameTh       string `json:"provinceNameTh" gorm:"column:name_th"`
+	NameEn       string `json:"provinceNameEn" gorm:"column:name_en"`
+}
+
+func (Province) TableName() string {
+	return "provinces"
 }
 
 type District struct {
-	DistrictCode int    `json:"districtCode" gorm:"primaryKey"`
-	ProvinceCode int    `json:"provinceCode"`
-	NameTh       string `json:"districtNameTh"`
-	NameEn       string `json:"districtNameEn"`
-	PostalCode   string `json:"postalCode"`
+	DistrictCode int    `json:"districtCode" gorm:"primaryKey;column:district_code"`
+	ProvinceCode int    `json:"provinceCode" gorm:"column:province_code"`
+	NameTh       string `json:"districtNameTh" gorm:"column:name_th"`
+	NameEn       string `json:"districtNameEn" gorm:"column:name_en"`
+	PostalCode   int    `json:"postalCode" gorm:"column:postal_code"`
+}
+
+func (District) TableName() string {
+	return "districts"
 }
 
 type Subdistrict struct {
-	SubdistrictCode int    `json:"subdistrictCode" gorm:"primaryKey"`
-	DistrictCode    int    `json:"districtCode"`
-	ProvinceCode    int    `json:"provinceCode"`
-	NameTh          string `json:"subdistrictNameTh"`
-	NameEn          string `json:"subdistrictNameEn"`
-	PostalCode      string `json:"postalCode"`
+	SubdistrictCode int    `json:"subdistrictCode" gorm:"primaryKey;column:subdistrict_code"`
+	DistrictCode    int    `json:"districtCode" gorm:"column:district_code"`
+	ProvinceCode    int    `json:"provinceCode" gorm:"column:province_code"`
+	NameTh          string `json:"subdistrictNameTh" gorm:"column:name_th"`
+	NameEn          string `json:"subdistrictNameEn" gorm:"column:name_en"`
+	PostalCode      int    `json:"postalCode" gorm:"column:postal_code"`
+}
+
+func (Subdistrict) TableName() string {
+	return "subdistricts"
 }
 
 func loadJSON[T any](filename string) ([]T, error) {
@@ -49,14 +60,14 @@ func loadJSON[T any](filename string) ([]T, error) {
 }
 
 func main() {
-	err := godotenv.Load()
+	err := godotenv.Load("../../.env")
 	if err != nil {
 		log.Println("No .env file found, using system environment")
 	}
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		log.Fatal("DATABASE_URL not set")
+		dsn = "host=localhost user=postgres password=password dbname=saan_db port=5432 sslmode=disable"
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -64,27 +75,46 @@ func main() {
 		log.Fatalf("failed to connect database: %v", err)
 	}
 
-	db.AutoMigrate(&Province{}, &District{}, &Subdistrict{})
+	// Create tables if not exist
+	err = db.AutoMigrate(&Province{}, &District{}, &Subdistrict{})
+	if err != nil {
+		log.Fatalf("failed to migrate database: %v", err)
+	}
+
+	// Clear existing data
 	db.Exec("TRUNCATE TABLE subdistricts, districts, provinces RESTART IDENTITY CASCADE")
 
-	base := filepath.Dir(os.Args[0])
-
-	provinces, err := loadJSON[Province](filepath.Join(base, "provinces.json"))
+	// Load data files
+	provinces, err := loadJSON[Province]("provinces.json")
 	if err != nil {
 		log.Fatal("failed to load provinces: ", err)
 	}
-	districts, err := loadJSON[District](filepath.Join(base, "districts.json"))
+	
+	districts, err := loadJSON[District]("districts.json")
 	if err != nil {
 		log.Fatal("failed to load districts: ", err)
 	}
-	subdistricts, err := loadJSON[Subdistrict](filepath.Join(base, "subdistricts.json"))
+	
+	subdistricts, err := loadJSON[Subdistrict]("subdistricts.json")
 	if err != nil {
 		log.Fatal("failed to load subdistricts: ", err)
 	}
 
-	db.Create(&provinces)
-	db.Create(&districts)
-	db.Create(&subdistricts)
+	// Insert data
+	if err := db.Create(&provinces).Error; err != nil {
+		log.Fatal("failed to insert provinces: ", err)
+	}
+	
+	if err := db.Create(&districts).Error; err != nil {
+		log.Fatal("failed to insert districts: ", err)
+	}
+	
+	if err := db.Create(&subdistricts).Error; err != nil {
+		log.Fatal("failed to insert subdistricts: ", err)
+	}
 
-	fmt.Println("✅ Successfully imported Thai address data into PostgreSQL")
+	fmt.Printf("✅ Successfully imported Thai address data into PostgreSQL\n")
+	fmt.Printf("   - Provinces: %d\n", len(provinces))
+	fmt.Printf("   - Districts: %d\n", len(districts))
+	fmt.Printf("   - Subdistricts: %d\n", len(subdistricts))
 }

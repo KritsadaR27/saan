@@ -85,9 +85,15 @@ func (s *ProductSync) Sync(ctx context.Context) error {
 		domainEvents = append(domainEvents, event)
 		processedCount++
 		
+		// Debug: Log event creation
+		if processedCount <= 3 {
+			log.Printf("DEBUG: Created domain event %d: ID=%s, Type=%s, AggregateID=%s", 
+				processedCount, event.ID, event.Type, event.AggregateID)
+		}
+		
 		// Cache product data with enhanced error handling
 		cacheKey := fmt.Sprintf("loyverse:product:%s", item.ID)
-		if err := s.redis.SafeSet(ctx, cacheKey, raw, 24*time.Hour); err != nil {
+		if err := s.redis.SafeSet(ctx, cacheKey, string(raw), 24*time.Hour); err != nil {
 			log.Printf("Error caching product %s: %v", item.ID, err)
 		} else {
 			log.Printf("Successfully cached product %s with key %s", item.ID, cacheKey)
@@ -97,7 +103,7 @@ func (s *ProductSync) Sync(ctx context.Context) error {
 		for _, variant := range item.Variants {
 			variantKey := fmt.Sprintf("loyverse:variant:%s", variant.ID)
 			variantData, _ := json.Marshal(variant)
-			if err := s.redis.SafeSet(ctx, variantKey, variantData, 24*time.Hour); err != nil {
+			if err := s.redis.SafeSet(ctx, variantKey, string(variantData), 24*time.Hour); err != nil {
 				log.Printf("Error caching variant %s: %v", variant.ID, err)
 			} else {
 				log.Printf("Successfully cached variant %s with key %s", variant.ID, variantKey)
@@ -114,10 +120,16 @@ func (s *ProductSync) Sync(ctx context.Context) error {
 	}
 	
 	// Publish events
+	log.Printf("About to publish %d domain events to Kafka", len(domainEvents))
 	if len(domainEvents) > 0 {
+		log.Printf("Publishing %d events to topic loyverse-events", len(domainEvents))
 		if err := s.publisher.PublishBatch(ctx, domainEvents); err != nil {
+			log.Printf("ERROR publishing events: %v", err)
 			return fmt.Errorf("publishing events: %w", err)
 		}
+		log.Printf("Successfully published %d events to Kafka", len(domainEvents))
+	} else {
+		log.Printf("No events to publish")
 	}
 	
 	// Update last sync time with enhanced error handling

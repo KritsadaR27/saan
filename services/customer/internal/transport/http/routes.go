@@ -43,6 +43,8 @@ func SetupRoutes(router *gin.Engine, app *application.Application) {
 		// Thai address routes
 		addresses := v1.Group("/addresses")
 		{
+			// Address suggestions endpoint (ตาม SAAN_FLOW.MD)
+			addresses.GET("/suggest", customerHandler.GetAddressSuggestions)
 			addresses.GET("/thai/search", customerHandler.SearchThaiAddresses)
 			addresses.GET("/thai/postal/:postal_code", customerHandler.GetThaiAddressByPostalCode)
 		}

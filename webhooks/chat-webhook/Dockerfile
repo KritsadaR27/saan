@@ -1,5 +1,8 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app
 
@@ -16,8 +19,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/main.g
 # Final stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS calls
-RUN apk --no-cache add ca-certificates tzdata
+# Install ca-certificates and wget for HTTPS and health checks
+RUN apk --no-cache add ca-certificates wget tzdata
+
+# Set timezone
+ENV TZ=Asia/Bangkok
 
 WORKDIR /root/
 
@@ -25,15 +31,15 @@ WORKDIR /root/
 COPY --from=builder /app/main .
 
 # Create non-root user
-RUN adduser -D -s /bin/sh chat-webhook
-USER chat-webhook
+RUN adduser -D -s /bin/sh appuser
+USER appuser
 
 # Expose port
 EXPOSE 8094
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8094/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8094/health || exit 1
 
 # Run the application
 CMD ["./main"]
