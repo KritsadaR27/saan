@@ -1,4 +1,3 @@
-// integrations/loyverse/config/config.go
 package config
 
 import (
@@ -6,12 +5,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds application configuration
 type Config struct {
 	// Loyverse API
 	LoyverseAPIToken string
+	WebhookSecret    string
 
 	// Redis
 	RedisAddr     string
@@ -22,18 +23,11 @@ type Config struct {
 	KafkaBrokers []string
 	KafkaTopic   string
 
-	// Sync intervals
-	ProductSyncInterval   string
-	InventorySyncInterval string
-	ReceiptSyncInterval   string
-	CustomerSyncInterval  string
-	
-	// Extended sync intervals
-	EmployeeSyncInterval    string
-	CategorySyncInterval    string
-	SupplierSyncInterval    string
-	PaymentTypeSyncInterval string
-	StoreSyncInterval       string
+	// Sync intervals (duration)
+	ProductSyncInterval   time.Duration
+	InventorySyncInterval time.Duration
+	ReceiptSyncInterval   time.Duration
+	CustomerSyncInterval  time.Duration
 
 	// Server
 	Port       int
@@ -46,32 +40,26 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		// Loyverse
 		LoyverseAPIToken: getEnv("LOYVERSE_API_TOKEN", ""),
+		WebhookSecret:    getEnv("LOYVERSE_WEBHOOK_SECRET", ""),
 
 		// Redis
-		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisAddr:     getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		RedisDB:       getEnvInt("REDIS_DB", 0),
 
 		// Kafka
-		KafkaBrokers: strings.Split(getEnv("KAFKA_BROKERS", "localhost:9092"), ","),
+		KafkaBrokers: strings.Split(getEnv("KAFKA_BROKERS", "kafka:9092"), ","),
 		KafkaTopic:   getEnv("KAFKA_TOPIC", "loyverse-events"),
 
-		// Sync intervals (cron format)
-		ProductSyncInterval:   getEnv("PRODUCT_SYNC_INTERVAL", "*/30 * * * *"),
-		InventorySyncInterval: getEnv("INVENTORY_SYNC_INTERVAL", "*/15 * * * *"),
-		ReceiptSyncInterval:   getEnv("RECEIPT_SYNC_INTERVAL", "*/5 * * * *"),
-		CustomerSyncInterval:  getEnv("CUSTOMER_SYNC_INTERVAL", "0 * * * *"),
-		
-		// Extended sync intervals (from environment variables)
-		EmployeeSyncInterval:    getEnv("EMPLOYEE_SYNC_INTERVAL", "0 */12 * * *"),
-		CategorySyncInterval:    getEnv("CATEGORY_SYNC_INTERVAL", "0 */12 * * *"),
-		SupplierSyncInterval:    getEnv("SUPPLIER_SYNC_INTERVAL", "0 */12 * * *"),
-		PaymentTypeSyncInterval: getEnv("PAYMENT_TYPE_SYNC_INTERVAL", "0 */12 * * *"),
-		StoreSyncInterval:       getEnv("STORE_SYNC_INTERVAL", "0 */12 * * *"),
+		// Sync intervals (using time.Duration)
+		ProductSyncInterval:   getEnvDuration("PRODUCT_SYNC_INTERVAL", 30*time.Minute),
+		InventorySyncInterval: getEnvDuration("INVENTORY_SYNC_INTERVAL", 15*time.Minute),
+		ReceiptSyncInterval:   getEnvDuration("RECEIPT_SYNC_INTERVAL", 5*time.Minute),
+		CustomerSyncInterval:  getEnvDuration("CUSTOMER_SYNC_INTERVAL", 60*time.Minute),
 
-		// Server (note: webhook service now uses port 8093)
-		Port:       getEnvInt("PORT", 8084),
-		AdminToken: getEnv("ADMIN_TOKEN", ""),
+		// Server
+		Port:       getEnvInt("PORT", 8083),
+		AdminToken: getEnv("ADMIN_TOKEN", "loyverse-admin-token-dev"),
 		TimeZone:   getEnv("TZ", "Asia/Bangkok"),
 	}
 
@@ -94,6 +82,15 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
 		}
 	}
 	return defaultValue

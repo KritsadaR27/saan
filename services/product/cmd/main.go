@@ -13,6 +13,8 @@ import (
 	"product-service/internal/infrastructure/cache"
 	"product-service/internal/infrastructure/config"
 	"product-service/internal/infrastructure/database"
+	"product-service/internal/infrastructure/events"
+	"product-service/internal/infrastructure/loyverse"
 	"product-service/internal/transport/http/handler"
 
 	"github.com/gin-gonic/gin"
@@ -46,10 +48,20 @@ func main() {
 		logger.Fatalf("Failed to initialize Redis cache: %v", err)
 	}
 
+	// Initialize Kafka event publisher
+	var eventPublisher events.Publisher
+	if len(cfg.Kafka.Brokers) > 0 {
+		eventPublisher = events.NewKafkaPublisher(cfg.Kafka.Brokers, logger)
+		logger.Info("Kafka event publisher initialized")
+	} else {
+		logger.Warn("Kafka brokers not configured, events will not be published")
+		eventPublisher = events.NewNoOpPublisher() // Create a no-op publisher for development
+	}
+
 	// Initialize repositories
 	productRepo := database.NewProductRepository(db)
+	categoryRepo := database.NewCategoryRepository(db) // Add this for sync functionality
 	// TODO: Add other repositories when implementations are ready
-	// categoryRepo := database.NewCategoryRepository(db)
 	// priceRepo := database.NewPriceRepository(db)
 	// inventoryRepo := database.NewInventoryRepository(db)
 
@@ -60,9 +72,23 @@ func main() {
 	// categoryUsecase := application.NewCategoryUsecase(categoryRepo, logger)
 	// pricingUsecase := application.NewPricingUsecase(priceRepo, productRepo, logger)
 	// inventoryUsecase := application.NewInventoryUsecase(inventoryRepo, productRepo, logger)
+	
+	// Initialize sync usecase for Loyverse integration
+	syncUsecase := application.NewSyncUsecase(productRepo, categoryRepo, eventPublisher, logger)
+
+	// Initialize Loyverse integration
+	var loyverseSyncService *loyverse.SyncService
+	if cfg.External.LoyverseAPIKey != "" {
+		loyverseClient := loyverse.NewClient(cfg.External.LoyverseAPIKey, logger)
+		loyverseSyncService = loyverse.NewSyncService(loyverseClient, syncUsecase, eventPublisher, logger)
+		logger.Info("Loyverse integration initialized")
+	} else {
+		logger.Warn("Loyverse API key not configured, sync functionality will be disabled")
+	}
 
 	// Initialize handlers
 	productHandler := handler.NewProductHandler(productUsecase, logger)
+	syncHandler := handler.NewSyncHandler(syncUsecase, loyverseSyncService, logger)
 	// TODO: Add other handlers when ready
 	// categoryHandler := handler.NewCategoryHandler(categoryUsecase, logger)
 	// pricingHandler := handler.NewPricingHandler(pricingUsecase, logger)
@@ -116,6 +142,14 @@ func main() {
 			products.GET("/:id", productHandler.GetProduct)
 			products.PUT("/:id", productHandler.UpdateProduct)
 			products.DELETE("/:id", productHandler.DeleteProduct)
+		}
+
+		sync := v1.Group("/sync")
+		{
+			sync.POST("/loyverse", syncHandler.SyncFromLoyverse)
+			sync.POST("/loyverse/products/:loyverse_id", syncHandler.SyncProductFromLoyverse)
+			sync.GET("/status/:sync_id", syncHandler.GetSyncStatus)
+			sync.GET("/last", syncHandler.GetLastSyncTime)
 		}
 	}
 

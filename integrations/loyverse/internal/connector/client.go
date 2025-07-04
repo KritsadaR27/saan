@@ -122,13 +122,13 @@ func (c *Client) GetWithPagination(ctx context.Context, endpoint string, limit i
 			}
 		} else {
 			log.Printf("DEBUG: Standard response unmarshaled, found %d items", len(response.Data))
-			
+
 			// If no data found in standard response, try alternative structure
 			if len(response.Data) == 0 {
 				var altResponse map[string]json.RawMessage
 				if err := json.Unmarshal(body, &altResponse); err == nil {
 					log.Printf("DEBUG: Alternative response structure: %+v", altResponse)
-					
+
 					// Extract data from alternative keys
 					dataFound := false
 					for key, value := range altResponse {
@@ -152,7 +152,7 @@ func (c *Client) GetWithPagination(ctx context.Context, endpoint string, limit i
 			} else {
 				allResults = append(allResults, response.Data...)
 			}
-			
+
 			// Use cursor from standard response if not found in alternative
 			if cursor == "" {
 				cursor = response.Cursor
@@ -279,9 +279,14 @@ func (c *Client) GetVariants(ctx context.Context) ([]json.RawMessage, error) {
 	return c.GetWithPagination(ctx, "/variants", 250)
 }
 
-// GetInventory retrieves inventory levels
+// GetInventory retrieves inventory levels (alternative endpoint for store_stocks)
 func (c *Client) GetInventory(ctx context.Context) ([]json.RawMessage, error) {
 	return c.GetWithPagination(ctx, "/inventory", 250)
+}
+
+// GetStoreStocks retrieves store stock levels
+func (c *Client) GetStoreStocks(ctx context.Context) ([]json.RawMessage, error) {
+	return c.GetWithPagination(ctx, "/store_stocks", 250)
 }
 
 // GetSuppliers retrieves suppliers
@@ -299,6 +304,11 @@ func (c *Client) GetReceiptsWithParams(ctx context.Context, params map[string]st
 	return c.GetReceipts(ctx)
 }
 
+// GetStoreStocksWithParams retrieves store stocks with parameters (with store filter)
+func (c *Client) GetStoreStocksWithParams(ctx context.Context, params map[string]string) ([]json.RawMessage, error) {
+	return c.GetStoreStocks(ctx)
+}
+
 // GetPOSDevices retrieves POS devices
 func (c *Client) GetPOSDevices(ctx context.Context) ([]json.RawMessage, error) {
 	return c.GetWithPagination(ctx, "/pos_devices", 250)
@@ -312,11 +322,6 @@ func (c *Client) GetCashRegisters(ctx context.Context) ([]json.RawMessage, error
 // GetWebhooks retrieves webhooks
 func (c *Client) GetWebhooks(ctx context.Context) ([]json.RawMessage, error) {
 	return c.GetWithPagination(ctx, "/webhooks", 250)
-}
-
-// GetCategories retrieves categories
-func (c *Client) GetCategories(ctx context.Context) ([]json.RawMessage, error) {
-	return c.GetWithPagination(ctx, "/categories", 250)
 }
 
 // GetAccount retrieves account information
@@ -338,7 +343,7 @@ func (c *Client) GetEndpoint(ctx context.Context, endpoint string) ([]byte, erro
 func (c *Client) GetAvailableEndpoints() map[string]string {
 	return map[string]string{
 		"stores":          "/stores",
-		"customers":       "/customers", 
+		"customers":       "/customers",
 		"employees":       "/employees",
 		"discounts":       "/discounts",
 		"modifiers":       "/modifiers",
@@ -350,6 +355,7 @@ func (c *Client) GetAvailableEndpoints() map[string]string {
 		"pos_devices":     "/pos_devices",
 		"cash_registers":  "/cash_registers",
 		"webhooks":        "/webhooks",
+		"store_stocks":    "/store_stocks",
 		"categories":      "/categories",
 		"items":           "/items",
 		"inventory":       "/inventory",
@@ -363,13 +369,13 @@ func (c *Client) GetAvailableEndpoints() map[string]string {
 func (c *Client) TestAllEndpoints(ctx context.Context) map[string]interface{} {
 	results := make(map[string]interface{})
 	endpoints := c.GetAvailableEndpoints()
-	
+
 	for name, path := range endpoints {
 		log.Printf("Testing endpoint: %s (%s)", name, path)
-		
+
 		var count int
 		var err error
-		
+
 		switch name {
 		case "receipts":
 			data, testErr := c.GetReceipts(ctx)
@@ -383,6 +389,10 @@ func (c *Client) TestAllEndpoints(ctx context.Context) map[string]interface{} {
 			data, testErr := c.GetInventory(ctx)
 			count = len(data)
 			err = testErr
+		case "store_stocks":
+			data, testErr := c.GetStoreStocks(ctx)
+			count = len(data)
+			err = testErr
 		case "account", "settings":
 			_, testErr := c.GetEndpoint(ctx, path)
 			if testErr == nil {
@@ -394,7 +404,7 @@ func (c *Client) TestAllEndpoints(ctx context.Context) map[string]interface{} {
 			count = len(data)
 			err = testErr
 		}
-		
+
 		if err != nil {
 			results[name] = map[string]interface{}{
 				"success": false,
@@ -408,6 +418,6 @@ func (c *Client) TestAllEndpoints(ctx context.Context) map[string]interface{} {
 			}
 		}
 	}
-	
+
 	return results
 }

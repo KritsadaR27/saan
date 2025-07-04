@@ -3,126 +3,61 @@ package repository
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
 	"time"
 
-	"integrations/loyverse/internal/redis"
+	"github.com/go-redis/redis/v8"
 )
 
-// RedisRepository handles Redis operations with enhanced error handling
+// RedisRepository handles Redis operations
 type RedisRepository struct {
-	client  *redis.Client
-	monitor *redis.HealthMonitor
+	client *redis.Client
 }
 
-// NewRedisRepository creates a new Redis repository with enhanced error handling
-func NewRedisRepository(config redis.Config) *RedisRepository {
-	client := redis.NewClient(config)
-	monitor := redis.NewHealthMonitor(client, 30*time.Second)
-	
-	// Set up health change callback
-	monitor.SetHealthChangeCallback(func(healthy bool) {
-		if healthy {
-			log.Println("Redis connection restored")
-		} else {
-			log.Println("Redis connection lost")
-		}
+// NewRedisRepository creates a new Redis repository
+func NewRedisRepository(addr string) *RedisRepository {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: addr,
+		DB:   0, // default DB
 	})
-	
-	// Start health monitoring in background
-	go monitor.Start(context.Background())
-	
+
 	return &RedisRepository{
-		client:  client,
-		monitor: monitor,
+		client: rdb,
 	}
 }
 
-// Set stores a value in Redis with expiration and enhanced error handling
+// Set stores a value in Redis with expiration
 func (r *RedisRepository) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
-	if !r.monitor.IsHealthy() {
-		return fmt.Errorf("Redis is unhealthy, skipping SET operation for key: %s", key)
-	}
-	
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("marshaling value for key %s: %w", key, err)
+		return err
 	}
-	
-	if err := r.client.SafeSet(ctx, key, string(data), expiration); err != nil {
-		return fmt.Errorf("setting key %s: %w", key, err)
-	}
-	
-	log.Printf("Successfully cached data for key: %s", key)
-	return nil
+	return r.client.Set(ctx, key, data, expiration).Err()
 }
 
-// Get retrieves a value from Redis with enhanced error handling
+// Get retrieves a value from Redis
 func (r *RedisRepository) Get(ctx context.Context, key string, dest interface{}) error {
-	if !r.monitor.IsHealthy() {
-		return fmt.Errorf("Redis is unhealthy, skipping GET operation for key: %s", key)
-	}
-	
-	val, err := r.client.SafeGet(ctx, key)
+	val, err := r.client.Get(ctx, key).Result()
 	if err != nil {
-		return fmt.Errorf("getting key %s: %w", key, err)
+		return err
 	}
-	
-	if err := json.Unmarshal([]byte(val), dest); err != nil {
-		return fmt.Errorf("unmarshaling value for key %s: %w", key, err)
-	}
-	
-	return nil
+	return json.Unmarshal([]byte(val), dest)
 }
 
-// Delete removes a key from Redis with enhanced error handling
+// Delete removes a key from Redis
 func (r *RedisRepository) Delete(ctx context.Context, key string) error {
-	if !r.monitor.IsHealthy() {
-		log.Printf("Redis is unhealthy, skipping DELETE operation for key: %s", key)
-		return nil // Don't fail the operation if Redis is down
-	}
-	
-	if err := r.client.SafeDel(ctx, key); err != nil {
-		return fmt.Errorf("deleting key %s: %w", key, err)
-	}
-	
-	return nil
+	return r.client.Del(ctx, key).Err()
 }
 
-// Exists checks if a key exists in Redis with enhanced error handling
+// Exists checks if a key exists in Redis
 func (r *RedisRepository) Exists(ctx context.Context, key string) (bool, error) {
-	if !r.monitor.IsHealthy() {
-		log.Printf("Redis is unhealthy, assuming key does not exist: %s", key)
-		return false, nil // Graceful degradation
-	}
-	
-	result, err := r.client.SafeExists(ctx, key)
+	result, err := r.client.Exists(ctx, key).Result()
 	if err != nil {
-		return false, fmt.Errorf("checking existence of key %s: %w", key, err)
+		return false, err
 	}
-	
 	return result > 0, nil
 }
 
-// IsHealthy returns the current health status of Redis
-func (r *RedisRepository) IsHealthy() bool {
-	return r.monitor.IsHealthy()
-}
-
-// GetHealthStats returns health monitoring statistics
-func (r *RedisRepository) GetHealthStats() map[string]interface{} {
-	return map[string]interface{}{
-		"healthy":             r.monitor.IsHealthy(),
-		"consecutive_fails":   r.monitor.GetConsecutiveFailures(),
-		"last_health_check":   r.monitor.GetLastHealthCheck(),
-		"health_history":      r.monitor.GetHealthHistory(),
-		"redis_pool_stats":    r.client.GetStats(),
-	}
-}
-
-// Close closes the Redis connection and stops monitoring
+// Close closes the Redis connection
 func (r *RedisRepository) Close() error {
-	r.monitor.Stop()
 	return r.client.Close()
 }

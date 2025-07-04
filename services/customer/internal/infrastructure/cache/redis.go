@@ -3,37 +3,24 @@ package cache
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"github.com/saan-system/services/customer/internal/domain"
+	"github.com/saan-system/services/customer/internal/domain/entity"
+	"github.com/saan-system/services/customer/internal/domain/repository"
 )
 
-// RedisClient interface for Redis operations
-type RedisClient interface {
-	Get(ctx context.Context, key string) *redis.StringCmd
-	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
-	Del(ctx context.Context, keys ...string) *redis.IntCmd
-	Close() error
+// redisCache implements repository.CacheRepository
+type redisCache struct {
+	client *redis.Client
 }
 
-type cacheRepository struct {
-	client RedisClient
-}
-
-// New creates a new Redis client
-func New() (RedisClient, error) {
-	addr := getEnv("REDIS_ADDR", "redis:6379")
-	password := getEnv("REDIS_PASSWORD", "")
-	db := 0
-
+// NewRedisCache creates a new Redis cache instance
+func NewRedisCache(addr string) (repository.CacheRepository, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:     addr,
-		Password: password,
-		DB:       db,
+		Password: "", // no password for development
+		DB:       0,  // default DB
 	})
 
 	// Test connection
@@ -41,94 +28,68 @@ func New() (RedisClient, error) {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+		return nil, err
 	}
 
-	return client, nil
-}
-
-// NewCacheRepository creates a new cache repository
-func NewCacheRepository(client RedisClient) domain.CacheRepository {
-	return &cacheRepository{client: client}
+	return &redisCache{client: client}, nil
 }
 
 // GetCustomer retrieves a customer from cache
-func (r *cacheRepository) GetCustomer(ctx context.Context, key string) (*domain.Customer, error) {
-	result := r.client.Get(ctx, key)
-	if result.Err() != nil {
-		if result.Err() == redis.Nil {
-			return nil, fmt.Errorf("customer not found in cache")
-		}
-		return nil, result.Err()
+func (c *redisCache) GetCustomer(ctx context.Context, key string) (*entity.Customer, error) {
+	data, err := c.client.Get(ctx, key).Result()
+	if err != nil {
+		return nil, err
 	}
 
-	var customer domain.Customer
-	if err := json.Unmarshal([]byte(result.Val()), &customer); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal customer: %w", err)
+	var customer entity.Customer
+	if err := json.Unmarshal([]byte(data), &customer); err != nil {
+		return nil, err
 	}
 
 	return &customer, nil
 }
 
 // SetCustomer stores a customer in cache
-func (r *cacheRepository) SetCustomer(ctx context.Context, key string, customer *domain.Customer, ttl int) error {
+func (c *redisCache) SetCustomer(ctx context.Context, key string, customer *entity.Customer, ttl int) error {
 	data, err := json.Marshal(customer)
 	if err != nil {
-		return fmt.Errorf("failed to marshal customer: %w", err)
+		return err
 	}
 
-	expiration := time.Duration(ttl) * time.Second
-	if err := r.client.Set(ctx, key, data, expiration).Err(); err != nil {
-		return fmt.Errorf("failed to set customer in cache: %w", err)
-	}
-
-	return nil
+	return c.client.Set(ctx, key, data, time.Duration(ttl)*time.Second).Err()
 }
 
 // DeleteCustomer removes a customer from cache
-func (r *cacheRepository) DeleteCustomer(ctx context.Context, key string) error {
-	if err := r.client.Del(ctx, key).Err(); err != nil {
-		return fmt.Errorf("failed to delete customer from cache: %w", err)
-	}
-	return nil
+func (c *redisCache) DeleteCustomer(ctx context.Context, key string) error {
+	return c.client.Del(ctx, key).Err()
 }
 
 // GetThaiAddresses retrieves Thai addresses from cache
-func (r *cacheRepository) GetThaiAddresses(ctx context.Context, key string) ([]domain.ThaiAddress, error) {
-	result := r.client.Get(ctx, key)
-	if result.Err() != nil {
-		if result.Err() == redis.Nil {
-			return nil, fmt.Errorf("Thai addresses not found in cache")
-		}
-		return nil, result.Err()
+func (c *redisCache) GetThaiAddresses(ctx context.Context, key string) ([]entity.ThaiAddress, error) {
+	data, err := c.client.Get(ctx, key).Result()
+	if err != nil {
+		return nil, err
 	}
 
-	var addresses []domain.ThaiAddress
-	if err := json.Unmarshal([]byte(result.Val()), &addresses); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal Thai addresses: %w", err)
+	var addresses []entity.ThaiAddress
+	if err := json.Unmarshal([]byte(data), &addresses); err != nil {
+		return nil, err
 	}
 
 	return addresses, nil
 }
 
 // SetThaiAddresses stores Thai addresses in cache
-func (r *cacheRepository) SetThaiAddresses(ctx context.Context, key string, addresses []domain.ThaiAddress, ttl int) error {
+func (c *redisCache) SetThaiAddresses(ctx context.Context, key string, addresses []entity.ThaiAddress, ttl int) error {
 	data, err := json.Marshal(addresses)
 	if err != nil {
-		return fmt.Errorf("failed to marshal Thai addresses: %w", err)
+		return err
 	}
 
-	expiration := time.Duration(ttl) * time.Second
-	if err := r.client.Set(ctx, key, data, expiration).Err(); err != nil {
-		return fmt.Errorf("failed to set Thai addresses in cache: %w", err)
-	}
-
-	return nil
+	return c.client.Set(ctx, key, data, time.Duration(ttl)*time.Second).Err()
 }
 
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
+// Close closes the Redis connection
+func (c *redisCache) Close() error {
+	return c.client.Close()
 }

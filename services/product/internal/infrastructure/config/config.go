@@ -78,6 +78,7 @@ type CacheConfig struct {
 // ExternalConfig holds external service configuration
 type ExternalConfig struct {
 	LoyverseService     string
+	LoyverseAPIKey      string
 	OrderService        string
 	InventoryService    string
 	CustomerService     string
@@ -162,6 +163,7 @@ func Load() (*Config, error) {
 
 		External: ExternalConfig{
 			LoyverseService:     getEnv("LOYVERSE_SERVICE_URL", "http://loyverse:8100"),
+			LoyverseAPIKey:      getEnv("LOYVERSE_API_KEY", ""),
 			OrderService:        getEnv("ORDER_SERVICE_URL", "http://order:8081"),
 			InventoryService:    getEnv("INVENTORY_SERVICE_URL", "http://inventory:8082"),
 			CustomerService:     getEnv("CUSTOMER_SERVICE_URL", "http://customer:8110"),
@@ -231,7 +233,7 @@ func (c *Config) GetRedisURL() string {
 	if c.Redis.Password == "" {
 		return fmt.Sprintf("%s:%s", c.Redis.Host, c.Redis.Port)
 	}
-	return fmt.Sprintf("%s:%s@%s:%s", c.Redis.Password, c.Redis.Database, c.Redis.Host, c.Redis.Port)
+	return fmt.Sprintf("%s:%d@%s:%s", c.Redis.Password, c.Redis.Database, c.Redis.Host, c.Redis.Port)
 }
 
 // Helper functions for environment variable parsing

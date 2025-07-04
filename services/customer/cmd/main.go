@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
@@ -11,12 +12,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
 	"github.com/saan-system/services/customer/internal/application"
-	"github.com/saan-system/services/customer/internal/infrastructure/database"
 	"github.com/saan-system/services/customer/internal/infrastructure/cache"
-	"github.com/saan-system/services/customer/internal/infrastructure/messaging"
+	"github.com/saan-system/services/customer/internal/infrastructure/database"
+	"github.com/saan-system/services/customer/internal/infrastructure/events"
 	"github.com/saan-system/services/customer/internal/infrastructure/loyverse"
 	httphandler "github.com/saan-system/services/customer/internal/transport/http"
 )
@@ -34,49 +36,68 @@ func main() {
 	}
 	defer logger.Sync()
 
-	// Initialize database
-	db, err := database.New()
+	// Initialize database connection
+	dbURL := getEnv("DATABASE_URL", "postgres://customer:password@localhost:5432/customer_db?sslmode=disable")
+	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 	defer db.Close()
 
-	// Run migrations
-	if err := database.RunMigrations(); err != nil {
-		logger.Fatal("Failed to run migrations", zap.Error(err))
+	// Test database connection
+	if err := db.Ping(); err != nil {
+		logger.Fatal("Failed to ping database", zap.Error(err))
 	}
 
+	// Initialize repositories
+	customerRepo := database.NewCustomerRepository(db)
+	addressRepo := database.NewCustomerAddressRepository(db)
+	vipBenefitsRepo := database.NewVIPTierBenefitsRepository(db)
+	pointsRepo := database.NewCustomerPointsRepository(db)
+	analyticsRepo := database.NewCustomerAnalyticsRepository(db)
+	thaiAddressRepo := database.NewThaiAddressRepository(db)
+	deliveryRouteRepo := database.NewDeliveryRouteRepository(db)
+
 	// Initialize Redis cache
-	redisClient, err := cache.New()
+	redisClient, err := cache.NewRedisCache(getEnv("REDIS_URL", "localhost:6379"))
 	if err != nil {
 		logger.Fatal("Failed to connect to Redis", zap.Error(err))
 	}
-	defer redisClient.Close()
 
-	// Initialize Kafka
-	kafkaProducer, err := messaging.NewProducer()
-	if err != nil {
-		logger.Fatal("Failed to initialize Kafka producer", zap.Error(err))
-	}
-	defer kafkaProducer.Close()
+	// Initialize Kafka event publisher
+	eventPublisher := events.NewKafkaEventPublisher(
+		[]string{getEnv("KAFKA_BROKERS", "localhost:9092")},
+		getEnv("KAFKA_TOPIC", "customer-events"),
+	)
 
 	// Initialize Loyverse client
-	loyverseClient := loyverse.NewClient()
+	loyverseClient := loyverse.NewClient(
+		getEnv("LOYVERSE_API_TOKEN", ""),
+		getEnv("LOYVERSE_BASE_URL", "https://api.loyverse.com/v1.0"),
+	)
+
+	// Create application dependencies
+	deps := application.Dependencies{
+		CustomerRepo:       customerRepo,
+		AddressRepo:        addressRepo,
+		VIPBenefitsRepo:    vipBenefitsRepo,
+		PointsRepo:         pointsRepo,
+		AnalyticsRepo:      analyticsRepo,
+		ThaiAddressRepo:    thaiAddressRepo,
+		DeliveryRouteRepo:  deliveryRouteRepo,
+		CacheRepo:          redisClient,
+		EventPublisher:     eventPublisher,
+		LoyverseClient:     loyverseClient,
+		Logger:             logger,
+	}
 
 	// Initialize application services
-	app := application.New(
-		db,
-		redisClient,
-		kafkaProducer,
-		loyverseClient,
-		logger,
-	)
+	app := application.New(deps)
 
 	// Initialize HTTP server
 	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery())
 
-	// Setup routes
+	// Setup routes (middleware is applied inside SetupRoutes)
 	httphandler.SetupRoutes(router, app)
 
 	// Configure server
