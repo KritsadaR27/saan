@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/saan/order-service/internal/application"
-	"github.com/saan/order-service/pkg/logger"
+	"order/internal/application"
+	"order/pkg/logger"
 )
 
 // ChatOrderHandler handles HTTP requests for chat-based order operations

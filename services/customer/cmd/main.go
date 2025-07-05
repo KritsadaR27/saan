@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -15,18 +16,25 @@ import (
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
-	"github.com/saan-system/services/customer/internal/application"
-	"github.com/saan-system/services/customer/internal/infrastructure/cache"
-	"github.com/saan-system/services/customer/internal/infrastructure/database"
-	"github.com/saan-system/services/customer/internal/infrastructure/events"
-	"github.com/saan-system/services/customer/internal/infrastructure/loyverse"
-	httphandler "github.com/saan-system/services/customer/internal/transport/http"
+	"customer/internal/application"
+	"customer/internal/infrastructure/cache"
+	"customer/internal/infrastructure/config"
+	"customer/internal/infrastructure/database"
+	"customer/internal/infrastructure/events"
+	"customer/internal/infrastructure/loyverse"
+	httphandler "customer/internal/transport/http"
 )
 
 func main() {
 	// Load environment variables
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
+	}
+
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
 	}
 
 	// Initialize logger
@@ -37,7 +45,9 @@ func main() {
 	defer logger.Sync()
 
 	// Initialize database connection
-	dbURL := getEnv("DATABASE_URL", "postgres://customer:password@localhost:5432/customer_db?sslmode=disable")
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		cfg.Database.User, cfg.Database.Password, cfg.Database.Host,
+		cfg.Database.Port, cfg.Database.Name, cfg.Database.SSLMode)
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		logger.Fatal("Failed to connect to database", zap.Error(err))
@@ -59,21 +69,25 @@ func main() {
 	deliveryRouteRepo := database.NewDeliveryRouteRepository(db)
 
 	// Initialize Redis cache
-	redisClient, err := cache.NewRedisCache(getEnv("REDIS_URL", "localhost:6379"))
+	redisClient, err := cache.NewRedisCache(cfg.Redis, logger)
 	if err != nil {
 		logger.Fatal("Failed to connect to Redis", zap.Error(err))
 	}
 
-	// Initialize Kafka event publisher
-	eventPublisher := events.NewKafkaEventPublisher(
-		[]string{getEnv("KAFKA_BROKERS", "localhost:9092")},
-		getEnv("KAFKA_TOPIC", "customer-events"),
-	)
+	// Initialize event publisher
+	var eventPublisher events.Publisher
+	if len(cfg.Kafka.Brokers) > 0 && cfg.Kafka.Brokers[0] != "" {
+		eventPublisher = events.NewKafkaPublisher(cfg.Kafka.Brokers, logger)
+		logger.Info("Kafka event publisher initialized")
+	} else {
+		logger.Warn("Kafka brokers not configured, events will not be published")
+		eventPublisher = events.NewNoOpPublisher()
+	}
 
 	// Initialize Loyverse client
 	loyverseClient := loyverse.NewClient(
-		getEnv("LOYVERSE_API_TOKEN", ""),
-		getEnv("LOYVERSE_BASE_URL", "https://api.loyverse.com/v1.0"),
+		cfg.External.LoyverseAPIToken,
+		cfg.External.LoyverseBaseURL,
 	)
 
 	// Create application dependencies
@@ -86,7 +100,7 @@ func main() {
 		ThaiAddressRepo:    thaiAddressRepo,
 		DeliveryRouteRepo:  deliveryRouteRepo,
 		CacheRepo:          redisClient,
-		EventPublisher:     eventPublisher,
+		EventPublisher:     eventPublisher, // Publisher interface embeds repository.EventPublisher
 		LoyverseClient:     loyverseClient,
 		Logger:             logger,
 	}

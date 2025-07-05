@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 	"github.com/google/uuid"
-	"github.com/saan/chat-service/internal/domain/entity"
+	"chat/internal/domain/entity"
 )
 
 // messageRepository implements MessageRepository

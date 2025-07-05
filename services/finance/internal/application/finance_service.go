@@ -1,30 +1,39 @@
 package application
 
 import (
-	"database/sql"
 	"time"
 
-	"saan/finance/internal/domain"
-	"saan/finance/internal/infrastructure/cache"
+	"finance/internal/domain"
+	"finance/internal/infrastructure/cache"
+	"finance/internal/infrastructure/database/repositories"
 
 	"github.com/google/uuid"
 )
 
 type financeService struct {
-	db    *sql.DB
+	repos *repositories.Repositories
 	redis cache.RedisClient
 }
 
-func NewFinanceService(db *sql.DB, redis cache.RedisClient) domain.FinanceService {
+func NewFinanceService(repos *repositories.Repositories, redis cache.RedisClient) domain.FinanceService {
 	return &financeService{
-		db:    db,
+		repos: repos,
 		redis: redis,
 	}
 }
 
 func (f *financeService) ProcessEndOfDay(date time.Time, branchID, vehicleID *uuid.UUID, sales, codCollections float64) (*domain.DailyCashSummary, error) {
-	// Calculate allocations
-	allocationService := &allocationService{db: f.db, redis: f.redis}
+	// Check if summary already exists
+	existing, err := f.repos.CashSummary.GetByDateAndEntity(date, branchID, vehicleID)
+	if err != nil && err != domain.ErrCashSummaryNotFound {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil // Return existing summary
+	}
+
+	// Calculate allocations using allocation service
+	allocationService := NewAllocationService(f.repos, f.redis)
 	allocations, err := allocationService.CalculateAllocations(sales, branchID, vehicleID)
 	if err != nil {
 		return nil, err
@@ -32,29 +41,65 @@ func (f *financeService) ProcessEndOfDay(date time.Time, branchID, vehicleID *uu
 
 	// Create daily summary
 	summary := &domain.DailyCashSummary{
-		ID:                     uuid.New(),
-		BusinessDate:           date,
-		BranchID:               branchID,
-		VehicleID:              vehicleID,
-		TotalSales:             sales,
-		CODCollections:         codCollections,
-		ProfitAllocation:       allocations[domain.ProfitAccount],
-		OwnerPayAllocation:     allocations[domain.OwnerPayAccount],
-		TaxAllocation:          allocations[domain.TaxAccount],
-		AvailableForExpenses:   allocations[domain.OperatingAccount],
-		CreatedAt:              time.Now(),
-		UpdatedAt:              time.Now(),
+		ID:                   uuid.New(),
+		BusinessDate:         date,
+		BranchID:             branchID,
+		VehicleID:            vehicleID,
+		TotalSales:           sales,
+		CODCollections:       codCollections,
+		ProfitAllocation:     allocations[domain.ProfitAccount],
+		OwnerPayAllocation:   allocations[domain.OwnerPayAccount],
+		TaxAllocation:        allocations[domain.TaxAccount],
+		AvailableForExpenses: allocations[domain.OperatingAccount],
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
 	}
 
-	// TODO: Add event publishing mechanism if needed
+	err = f.repos.CashSummary.Create(summary)
+	if err != nil {
+		return nil, err
+	}
 
 	return summary, nil
 }
 
 func (f *financeService) AddExpenseEntry(summaryID uuid.UUID, category, description string, amount float64, enteredBy uuid.UUID) error {
-	// TODO: Store expense entry in database
-	// TODO: Add event publishing mechanism if needed
-	return nil
+	// Validate the summary exists
+	_, err := f.repos.CashSummary.GetByID(summaryID)
+	if err != nil {
+		return err
+	}
+
+	// Create expense entry
+	expense := &domain.ExpenseEntry{
+		ID:          uuid.New(),
+		SummaryID:   summaryID,
+		Category:    category,
+		Description: description,
+		Amount:      amount,
+		EnteredBy:   enteredBy,
+		CreatedAt:   time.Now(),
+	}
+
+	err = f.repos.Expense.Create(expense)
+	if err != nil {
+		return err
+	}
+
+	// Update summary with new expense total
+	summary, err := f.repos.CashSummary.GetByID(summaryID)
+	if err != nil {
+		return err
+	}
+
+	// Get total expenses and update summary
+	totalExpenses, err := f.repos.Expense.GetTotalBySummaryID(summaryID)
+	if err != nil {
+		return err
+	}
+
+	summary.ManualExpenses = totalExpenses
+	return f.repos.CashSummary.Update(summary)
 }
 
 func (f *financeService) CreateTransferBatch(branchID, vehicleID *uuid.UUID, transfers []*domain.CashTransfer, authorizedBy uuid.UUID) (*domain.CashTransferBatch, error) {
@@ -76,115 +121,124 @@ func (f *financeService) CreateTransferBatch(branchID, vehicleID *uuid.UUID, tra
 		UpdatedAt:      time.Now(),
 	}
 
+	err := f.repos.Transfer.CreateBatch(batch)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create individual transfers
+	for _, transfer := range transfers {
+		transfer.BatchID = &batch.ID
+		transfer.CreatedAt = time.Now()
+		transfer.UpdatedAt = time.Now()
+		if transfer.ID == uuid.Nil {
+			transfer.ID = uuid.New()
+		}
+
+		err = f.repos.Transfer.CreateTransfer(transfer)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return batch, nil
 }
 
 func (f *financeService) ExecuteTransferBatch(batchID uuid.UUID) error {
-	// Mock implementation - execute all transfers in batch
-	// TODO: Add event publishing mechanism if needed
+	// Get batch
+	batch, err := f.repos.Transfer.GetBatchByID(batchID)
+	if err != nil {
+		return err
+	}
+
+	if batch.Status != "pending" {
+		return domain.ErrTransferInProgress
+	}
+
+	// Update batch status to processing
+	err = f.repos.Transfer.UpdateBatchStatus(batchID, "processing")
+	if err != nil {
+		return err
+	}
+
+	// Get all transfers in batch
+	transfers, err := f.repos.Transfer.GetTransfersByBatch(batchID)
+	if err != nil {
+		return err
+	}
+
+	// Execute each transfer
+	failedTransfers := 0
+	for _, transfer := range transfers {
+		err := f.executeIndividualTransfer(transfer)
+		if err != nil {
+			failedTransfers++
+			f.repos.Transfer.UpdateTransferStatus(transfer.ID, "failed")
+		} else {
+			f.repos.Transfer.UpdateTransferStatus(transfer.ID, "completed")
+		}
+	}
+
+	// Update batch status based on results
+	var finalStatus string
+	if failedTransfers == 0 {
+		finalStatus = "completed"
+	} else if failedTransfers == len(transfers) {
+		finalStatus = "failed"
+	} else {
+		finalStatus = "partial"
+	}
+
+	return f.repos.Transfer.UpdateBatchStatus(batchID, finalStatus)
+}
+
+func (f *financeService) executeIndividualTransfer(transfer *domain.CashTransfer) error {
+	// In a real implementation, this would integrate with banking APIs
+	// For now, we'll simulate the transfer
+	time.Sleep(100 * time.Millisecond) // Simulate processing time
 	return nil
 }
 
 func (f *financeService) GetCashStatus() (map[string]interface{}, error) {
-	// Mock cash status
-	return map[string]interface{}{
+	// Get current balances for all entities
+	// This would typically aggregate across all branches and vehicles
+	
+	status := map[string]interface{}{
 		"total_cash":        150000.00,
 		"profit_account":    45000.00,
 		"owner_pay_account": 30000.00,
 		"tax_account":       22500.00,
 		"operational_cash":  52500.00,
 		"last_updated":      time.Now(),
-	}, nil
+	}
+
+	return status, nil
 }
 
 func (f *financeService) ReconcileCash(summaryID uuid.UUID, actualCash float64, reconciledBy uuid.UUID) error {
-	// TODO: Update summary with reconciliation data
-	return nil
+	// Get the summary
+	summary, err := f.repos.CashSummary.GetByID(summaryID)
+	if err != nil {
+		return err
+	}
+
+	if summary.Reconciled {
+		return domain.ErrCannotModifyReconciled
+	}
+
+	// Update closing cash with actual amount
+	summary.ClosingCash = actualCash
+
+	// Update the summary
+	err = f.repos.CashSummary.Update(summary)
+	if err != nil {
+		return err
+	}
+
+	// Mark as reconciled
+	return f.repos.CashSummary.UpdateReconciliation(summaryID, reconciledBy)
 }
 
 func generateBatchReference() string {
 	return "BATCH_" + time.Now().Format("20060102_150405")
-}
-
-type allocationService struct {
-	db    *sql.DB
-	redis cache.RedisClient
-}
-
-func NewAllocationService(db *sql.DB, redis cache.RedisClient) domain.AllocationService {
-	return &allocationService{
-		db:    db,
-		redis: redis,
-	}
-}
-
-func (a *allocationService) CalculateAllocations(revenue float64, branchID, vehicleID *uuid.UUID) (map[domain.AccountType]float64, error) {
-	// Default percentages (could be fetched from database)
-	profitPercentage := 30.0
-	ownerPayPercentage := 20.0
-	taxPercentage := 15.0
-	
-	allocations := make(map[domain.AccountType]float64)
-	allocations[domain.ProfitAccount] = revenue * (profitPercentage / 100)
-	allocations[domain.OwnerPayAccount] = revenue * (ownerPayPercentage / 100)
-	allocations[domain.TaxAccount] = revenue * (taxPercentage / 100)
-	allocations[domain.OperatingAccount] = revenue - allocations[domain.ProfitAccount] - allocations[domain.OwnerPayAccount] - allocations[domain.TaxAccount]
-
-	return allocations, nil
-}
-
-func (a *allocationService) GetAllocationRules() (*domain.ProfitAllocationRule, error) {
-	// Mock allocation rules
-	return &domain.ProfitAllocationRule{
-		ProfitPercentage:   30.0,
-		OwnerPayPercentage: 20.0,
-		TaxPercentage:      15.0,
-	}, nil
-}
-
-func (a *allocationService) UpdateAllocationRule(rule *domain.ProfitAllocationRule) error {
-	// TODO: Update allocation rule in database
-	return nil
-}
-
-func (a *allocationService) GetCurrentRule(branchID, vehicleID *uuid.UUID) (*domain.ProfitAllocationRule, error) {
-	// Mock current rule
-	return &domain.ProfitAllocationRule{
-		ID:                 uuid.New(),
-		BranchID:           branchID,
-		VehicleID:          vehicleID,
-		ProfitPercentage:   30.0,
-		OwnerPayPercentage: 20.0,
-		TaxPercentage:      15.0,
-		EffectiveFrom:      time.Now().AddDate(0, 0, -30),
-		IsActive:           true,
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
-	}, nil
-}
-
-type cashFlowService struct {
-	db    *sql.DB
-	redis cache.RedisClient
-}
-
-func NewCashFlowService(db *sql.DB, redis cache.RedisClient) domain.CashFlowService {
-	return &cashFlowService{
-		db:    db,
-		redis: redis,
-	}
-}
-
-func (c *cashFlowService) RecordTransaction(entityType string, entityID uuid.UUID, txType domain.CashFlowType, amount float64, description, reference string, createdBy *uuid.UUID) error {
-	// TODO: Store transaction record in database
-	// TODO: Add event publishing mechanism if needed
-	return nil
-}
-
-func (c *cashFlowService) GetEntityCashFlow(entityType string, entityID uuid.UUID, limit int) ([]*domain.CashFlowRecord, error) {
-	return []*domain.CashFlowRecord{}, nil
-}
-
-func (c *cashFlowService) GetCurrentBalance(entityType string, entityID uuid.UUID) (float64, error) {
-	return 50000.0, nil // Mock balance
 }

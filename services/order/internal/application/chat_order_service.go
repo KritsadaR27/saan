@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/saan/order-service/internal/application/dto"
-	"github.com/saan/order-service/internal/application/template"
-	"github.com/saan/order-service/internal/domain"
-	"github.com/saan/order-service/internal/infrastructure/client"
-	"github.com/saan/order-service/pkg/logger"
+	"order/internal/application/dto"
+	"order/internal/application/template"
+	"order/internal/domain"
+	"order/internal/infrastructure/client"
+	"order/pkg/logger"
 )
 
 // ChatOrderItem represents an item from chat interaction
@@ -33,7 +33,7 @@ type ChatOrderRequest struct {
 
 // ChatOrderService handles chat-based order operations
 type ChatOrderService struct {
-	orderService     *OrderService
+	orderService     *Service
 	customerClient   client.CustomerClient
 	inventoryClient  client.InventoryClient
 	notificationClient client.NotificationClient
@@ -43,7 +43,7 @@ type ChatOrderService struct {
 
 // NewChatOrderService creates a new chat order service
 func NewChatOrderService(
-	orderService *OrderService,
+	orderService *Service,
 	customerClient client.CustomerClient,
 	inventoryClient client.InventoryClient,
 	notificationClient client.NotificationClient,
@@ -195,14 +195,17 @@ func (s *ChatOrderService) ConfirmChatOrder(ctx context.Context, chatID string, 
 	s.logger.Info("Confirming chat order", "chat_id", chatID, "order_id", orderID)
 
 	// อัพเดทสถานะเป็น confirmed
-	statusReq := &dto.UpdateOrderStatusRequest{
-		Status: domain.OrderStatusConfirmed,
-	}
-
-	order, err := s.orderService.UpdateOrderStatus(ctx, orderID, statusReq)
+	err := s.orderService.UpdateOrderStatus(ctx, orderID, domain.OrderStatusConfirmed)
 	if err != nil {
 		s.logger.Error("Failed to confirm chat order", "chat_id", chatID, "order_id", orderID, "error", err)
 		return nil, fmt.Errorf("failed to confirm order: %w", err)
+	}
+
+	// ดึงข้อมูลออร์เดอร์ที่อัพเดทแล้ว
+	order, err := s.orderService.GetOrder(ctx, orderID)
+	if err != nil {
+		s.logger.Error("Failed to get updated order", "chat_id", chatID, "order_id", orderID, "error", err)
+		return nil, fmt.Errorf("failed to get updated order: %w", err)
 	}
 
 	// ส่ง confirmation message
@@ -222,11 +225,7 @@ func (s *ChatOrderService) CancelChatOrder(ctx context.Context, chatID string, o
 	s.logger.Info("Cancelling chat order", "chat_id", chatID, "order_id", orderID, "reason", reason)
 
 	// อัพเดทสถานะเป็น cancelled
-	statusReq := &dto.UpdateOrderStatusRequest{
-		Status: domain.OrderStatusCancelled,
-	}
-
-	_, err := s.orderService.UpdateOrderStatus(ctx, orderID, statusReq)
+	err := s.orderService.UpdateOrderStatus(ctx, orderID, domain.OrderStatusCancelled)
 	if err != nil {
 		s.logger.Error("Failed to cancel chat order", "chat_id", chatID, "order_id", orderID, "error", err)
 		return fmt.Errorf("failed to cancel order: %w", err)

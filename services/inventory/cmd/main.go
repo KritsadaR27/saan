@@ -4,19 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"services/inventory/internal/application"
-	"services/inventory/internal/config"
-	"services/inventory/internal/infrastructure/kafka"
-	"services/inventory/internal/infrastructure/postgres"
-	"services/inventory/internal/infrastructure/redis"
-	"services/inventory/internal/interfaces/http/routes"
+	"inventory/internal/application"
+	"inventory/internal/config"
+	"inventory/internal/infrastructure/cache"
+	"inventory/internal/infrastructure/database"
+	"inventory/internal/infrastructure/events"
+	"inventory/internal/interfaces/http/routes"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -31,7 +30,7 @@ func main() {
 	cfg := config.Load()
 
 	// Set Gin mode
-	if cfg.Environment == "production" {
+	if cfg.Server.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 		logger.SetLevel(logrus.InfoLevel)
 	} else {
@@ -40,23 +39,47 @@ func main() {
 	}
 
 	// Initialize infrastructure
-	redisClient := redis.NewClient(cfg.RedisAddr, cfg.RedisPassword)
-	dbConn := postgres.NewConnection(cfg.DatabaseURL)
-	kafkaConsumer := kafka.NewConsumer(cfg.KafkaBrokers, cfg.KafkaConsumerGroup)
+	redisClient, err := cache.NewRedisClient(cfg.Redis, logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize Redis client")
+	}
+
+	dbConn, err := database.NewConnection(cfg.Database, logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize database connection")
+	}
+
+	// Initialize event infrastructure
+	var eventPublisher events.Publisher
+	var kafkaConsumer *events.Consumer
+
+	// Use Kafka for events if enabled, otherwise use noop
+	if len(cfg.Kafka.Brokers) > 0 && cfg.Kafka.Brokers[0] != "" {
+		eventPublisher = events.NewKafkaPublisher(cfg.Kafka, logger)
+		kafkaConsumer = events.NewConsumer(cfg.Kafka, logger)
+	} else {
+		eventPublisher = events.NewNoopPublisher(logger)
+		kafkaConsumer = nil
+	}
 
 	// Initialize application services
 	productService := application.NewProductService(dbConn, logger)
 
-	// Register Kafka event handlers
-	kafkaConsumer.RegisterHandler("product.updated", func(eventType string, data []byte) error {
-		return productService.UpsertProduct(context.Background(), data)
-	})
+	// Register Kafka event handlers if Kafka is enabled
+	if kafkaConsumer != nil {
+		kafkaConsumer.RegisterHandler("product.updated", func(eventType string, data []byte) error {
+			return productService.UpsertProduct(context.Background(), data)
+		})
+	}
 
 	// Defer cleanup
 	defer func() {
 		redisClient.Close()
 		dbConn.Close()
-		kafkaConsumer.Close()
+		if kafkaConsumer != nil {
+			kafkaConsumer.Close()
+		}
+		eventPublisher.Close()
 	}()
 
 	// Initialize HTTP router with custom routes
@@ -130,24 +153,26 @@ func main() {
 
 	// Setup HTTP server
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%s", cfg.Port),
+		Addr:         fmt.Sprintf(":%s", cfg.Server.Port),
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start Kafka consumer in background
-	go func() {
-		logger.Info("Starting Kafka consumer for real-time inventory updates")
-		if err := kafkaConsumer.StartConsuming(); err != nil {
-			logger.WithError(err).Error("Failed to start Kafka consumer")
-		}
-	}()
+	// Start Kafka consumer in background if enabled
+	if kafkaConsumer != nil {
+		go func() {
+			logger.Info("Starting Kafka consumer for real-time inventory updates")
+			if err := kafkaConsumer.StartConsuming(); err != nil {
+				logger.WithError(err).Error("Failed to start Kafka consumer")
+			}
+		}()
+	}
 
 	// Start server in background
 	go func() {
-		logger.WithField("port", cfg.Port).Info("Starting Inventory Service HTTP server")
+		logger.WithField("port", cfg.Server.Port).Info("Starting Inventory Service HTTP server")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.WithError(err).Fatal("Failed to start HTTP server")
 		}
@@ -169,33 +194,4 @@ func main() {
 	}
 
 	logger.Info("Inventory Service stopped")
-}
-
-func UpsertProductHandler(c *gin.Context) {
-	var productData map[string]interface{}
-	if err := c.ShouldBindJSON(&productData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
-		return
-	}
-
-	router := gin.Default()
-
-	// Middleware to inject dependencies
-	router.Use(func(c *gin.Context) {
-		c.Set("redisClient", redisClient)
-		c.Set("dbConn", dbConn)
-		c.Set("kafkaConsumer", kafkaConsumer)
-		c.Set("logger", logger)
-		c.Next()
-	})
-
-	// Health check
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
-
-	// Product upsert endpoint
-	router.POST("/products/upsert", UpsertProductHandler)
-
-	return router
 }

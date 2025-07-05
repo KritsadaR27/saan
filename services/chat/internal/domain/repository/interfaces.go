@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/saan/chat-service/internal/domain/entity"
+	"chat/internal/domain/entity"
 )
 
 // MessageRepository defines the interface for message data operations

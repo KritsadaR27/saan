@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/saan/order-service/internal/application/dto"
-	"github.com/saan/order-service/internal/domain"
-	"github.com/saan/order-service/pkg/logger"
+	"order/internal/application/dto"
+	"order/internal/domain"
+	"order/pkg/logger"
 )
 
 // Mock implementations for testing

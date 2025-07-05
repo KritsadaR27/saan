@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"product-service/internal/application"
-	"product-service/internal/infrastructure/cache"
-	"product-service/internal/infrastructure/config"
-	"product-service/internal/infrastructure/database"
-	"product-service/internal/infrastructure/events"
-	"product-service/internal/infrastructure/loyverse"
-	"product-service/internal/transport/http/handler"
+	"product/internal/application"
+	"product/internal/infrastructure/cache"
+	"product/internal/infrastructure/config"
+	"product/internal/infrastructure/database"
+	"product/internal/infrastructure/events"
+	"product/internal/infrastructure/loyverse"
+	"product/internal/transport/http/handler"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -43,7 +43,7 @@ func main() {
 	defer database.Close(db)
 
 	// Initialize Redis cache
-	redisCache, err := cache.NewRedisCache(cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.Password, cfg.Redis.Database, logger)
+	redisCache, err := cache.NewRedisCache(cfg.Redis, logger)
 	if err != nil {
 		logger.Fatalf("Failed to initialize Redis cache: %v", err)
 	}

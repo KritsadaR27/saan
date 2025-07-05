@@ -3,7 +3,7 @@ package application
 import (
 	"go.uber.org/zap"
 
-	"github.com/saan-system/services/customer/internal/domain/repository"
+	"customer/internal/domain/repository"
 )
 
 // Application holds all application usecases as per Clean Architecture

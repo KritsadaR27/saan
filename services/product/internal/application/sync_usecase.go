@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"product-service/internal/domain/entity"
-	"product-service/internal/domain/repository"
-	"product-service/internal/infrastructure/events"
+	"product/internal/domain/entity"
+	"product/internal/domain/repository"
+	"product/internal/infrastructure/events"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"

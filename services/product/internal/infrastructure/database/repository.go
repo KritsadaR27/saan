@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"product-service/internal/domain/entity"
-	"product-service/internal/domain/repository"
+	"product/internal/domain/entity"
+	"product/internal/domain/repository"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

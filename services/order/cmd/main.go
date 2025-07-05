@@ -9,103 +9,89 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/saan/order-service/internal/application"
-	"github.com/saan/order-service/internal/application/template"
-	"github.com/saan/order-service/internal/infrastructure/client"
-	"github.com/saan/order-service/internal/infrastructure/config"
-	"github.com/saan/order-service/internal/infrastructure/db"
-	"github.com/saan/order-service/internal/infrastructure/event"
-	"github.com/saan/order-service/internal/infrastructure/repository"
-	httpTransport "github.com/saan/order-service/internal/transport/http"
-	"github.com/saan/order-service/internal/transport/http/middleware"
-	"github.com/saan/order-service/pkg/logger"
+	"order/internal/application"
+	"order/internal/infrastructure/cache"
+	"order/internal/infrastructure/config"
+	"order/internal/infrastructure/database"
+	"order/internal/infrastructure/events"
+	"order/internal/infrastructure/repository"
+	httpTransport "order/internal/transport/http"
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
 	
-	// Initialize logger
-	log := logger.NewLogger(cfg.Logger.Level, cfg.Logger.Format)
-	log.Info("Starting Order Service...")
-	
-	// Connect to database
-	database, err := db.Connect(&cfg.Database)
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+	// Setup logger
+	logger := logrus.New()
+	logger.SetLevel(logrus.InfoLevel)
+	if cfg.Logging.Level == "debug" {
+		logger.SetLevel(logrus.DebugLevel)
 	}
-	defer database.Close()
-	log.Info("Connected to database successfully")
+	if cfg.Server.Environment == "production" {
+		logger.SetFormatter(&logrus.JSONFormatter{})
+		gin.SetMode(gin.ReleaseMode)
+	}
 	
-	// Initialize repositories
-	orderRepo := repository.NewPostgresOrderRepository(database)
-	orderItemRepo := repository.NewPostgresOrderItemRepository(database)
-	auditRepo := repository.NewPostgresAuditRepository(database)
-	orderEventRepo := repository.NewPostgresEventRepository(database)
+	logger.Info("Starting Order Service...")
 	
-	// Initialize HTTP clients (following PROJECT_RULES.md service names)
-	inventoryClient := client.NewHTTPInventoryClient("http://inventory-service:8082")
-	customerClient := client.NewHTTPCustomerClient("http://user-service:8088") 
-	notificationClient := client.NewHTTPNotificationClient("http://notification-service:8092")
-	
-	// Initialize event publisher (Mock for development)
-	eventPublisher := event.NewMockEventPublisher()
+	// Initialize database
+	db, err := database.NewConnection(cfg.Database, logger)
+	if err != nil {
+		logger.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+	logger.Info("Connected to database successfully")
+
+	// Initialize Redis cache
+	var redisCache *cache.RedisClient
+	if cfg.Redis.Host != "" {
+		redisCache, err = cache.NewRedisClient(cfg.Redis, logger)
+		if err != nil {
+			logger.Warnf("Failed to initialize Redis cache: %v", err)
+			logger.Info("Continuing without Redis cache")
+		} else {
+			defer redisCache.Close()
+			logger.Info("Redis cache initialized successfully")
+		}
+	}
+
+	// Initialize event publisher
+	var eventPublisher events.Publisher
+	if len(cfg.Kafka.Brokers) > 0 && cfg.Kafka.Brokers[0] != "" {
+		eventPublisher = events.NewKafkaPublisher(cfg.Kafka, logger)
+		logger.Info("Kafka event publisher initialized")
+	} else {
+		eventPublisher = events.NewNoopPublisher(logger)
+		logger.Warn("Kafka brokers not configured, using noop event publisher")
+	}
 	defer eventPublisher.Close()
 	
-	// Initialize outbox worker
-	outboxConfig := event.DefaultOutboxWorkerConfig()
-	outboxWorker := event.NewOutboxWorker(orderEventRepo, eventPublisher, outboxConfig, log)
+	// Initialize repositories
+	orderRepo := repository.NewOrderRepository(db)
+	orderItemRepo := repository.NewOrderItemRepository(db)
+	auditRepo := repository.NewAuditRepository(db)
+	orderEventRepo := repository.NewEventRepository(db)
 	
-	// Start outbox worker
-	ctx := context.Background()
-	outboxWorker.Start(ctx)
-	defer outboxWorker.Stop()
+	// Initialize service
+	orderService := application.NewService(orderRepo, orderItemRepo, auditRepo, orderEventRepo, eventPublisher, redisCache, logger)
 	
-	// Initialize services
-	orderService := application.NewOrderService(orderRepo, orderItemRepo, auditRepo, orderEventRepo, eventPublisher, log)
-	
-	// Initialize statistics service
-	statsService := application.NewOrderStatsService(orderRepo, orderItemRepo, log)
-	
-	// Initialize template selector for chat integration
-	templateSelector := template.NewTemplateSelector()
-	
-	// Initialize chat order service
-	chatOrderService := application.NewChatOrderService(
-		orderService,
-		customerClient,
-		inventoryClient,
-		notificationClient,
-		templateSelector,
-		log,
-	)
-	
-	// Initialize handlers
-	orderHandler := httpTransport.NewOrderHandler(orderService, log)
-	chatOrderHandler := httpTransport.NewChatOrderHandler(chatOrderService, log)
-	statsHandler := httpTransport.NewStatsHandler(statsService, log)
-	
-	// Initialize auth config
-	authConfig := &middleware.AuthConfig{
-		AuthServiceURL: "http://user-service:8088", // Following PROJECT_RULES.md service names
-		JWTSecret:      cfg.JWT.Secret,
-		Logger:         log,
-	}
-	
-	// Setup routes with auth config
-	router := httpTransport.SetupRoutes(orderHandler, chatOrderHandler, statsHandler, authConfig, log)
+	// Setup routes
+	router := httpTransport.SetupRoutes(orderService, logger)
 	
 	// Create HTTP server
 	server := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Addr:    fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port),
 		Handler: router,
 	}
 	
 	// Start server in a goroutine
 	go func() {
-		log.Infof("Server starting on %s:%d", cfg.Server.Host, cfg.Server.Port)
+		logger.Infof("Server starting on %s:%s", cfg.Server.Host, cfg.Server.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			logger.Fatalf("Failed to start server: %v", err)
 		}
 	}()
 	
@@ -113,15 +99,15 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Info("Shutting down server...")
+	logger.Info("Shutting down server...")
 	
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
 	if err := server.Shutdown(ctx); err != nil {
-		log.Errorf("Server forced to shutdown: %v", err)
+		logger.Errorf("Server forced to shutdown: %v", err)
 	} else {
-		log.Info("Server shutdown completed")
+		logger.Info("Server shutdown completed")
 	}
 }

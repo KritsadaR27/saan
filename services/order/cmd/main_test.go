@@ -2,7 +2,7 @@ package main
 
 import (
 	"testing"
-	"github.com/saan/order-service/internal/domain"
+	"order/internal/domain"
 	"github.com/google/uuid"
 )
 

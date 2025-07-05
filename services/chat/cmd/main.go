@@ -12,14 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/saan/chat-service/internal/config"
-	"github.com/saan/chat-service/internal/infrastructure/database"
-	"github.com/saan/chat-service/internal/infrastructure/kafka"
-	"github.com/saan/chat-service/internal/infrastructure/redis"
-	"github.com/saan/chat-service/internal/infrastructure/websocket"
-	httpTransport "github.com/saan/chat-service/internal/transport/http"
-	"github.com/saan/chat-service/internal/application"
-	"github.com/saan/chat-service/internal/domain/repository"
+	"chat/internal/config"
+	"chat/internal/infrastructure/database"
+	"chat/internal/infrastructure/kafka"
+	"chat/internal/infrastructure/redis"
+	"chat/internal/infrastructure/websocket"
+	httpTransport "chat/internal/transport/http"
+	"chat/internal/application"
+	"chat/internal/domain/repository"
 )
 
 func main() {

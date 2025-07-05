@@ -3,7 +3,7 @@ package template
 import (
 	"fmt"
 
-	"github.com/saan/order-service/internal/application/dto"
+	"order/internal/application/dto"
 )
 
 // MessageTemplate defines the interface for message templates

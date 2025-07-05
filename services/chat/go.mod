@@ -1,4 +1,4 @@
-module github.com/saan/chat-service
+module chat
 
 go 1.23
 

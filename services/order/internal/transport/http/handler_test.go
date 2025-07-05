@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/saan/order-service/internal/application/dto"
-	"github.com/saan/order-service/internal/domain"
+	"order/internal/application/dto"
+	"order/internal/domain"
 )
 
 // HandlerTestSuite tests HTTP endpoints

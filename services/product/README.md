@@ -28,10 +28,10 @@ internal/
 │   └── service/             # Business logic services
 ├── infrastructure/          # Infrastructure layer
 │   ├── config/             # Configuration
-│   ├── database/           # Database connection
-│   ├── kafka/              # Kafka producer
-│   ├── redis/              # Redis client
-│   └── repository/         # Repository implementations
+│   ├── database/           # Database connection & repositories
+│   ├── cache/              # Redis cache implementation
+│   ├── events/             # Event streaming (Kafka, NoOp)
+│   └── loyverse/           # External Loyverse integration
 └── transport/               # Transport layer
     └── http/               # HTTP handlers and middleware
 

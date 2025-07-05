@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/saan/order-service/internal/application/dto"
-	"github.com/saan/order-service/internal/domain"
-	"github.com/saan/order-service/pkg/logger"
+	"order/internal/application/dto"
+	"order/internal/domain"
+	"order/pkg/logger"
 )
 
 // OrderStatsService handles order statistics and analytics

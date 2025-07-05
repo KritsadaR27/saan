@@ -329,3 +329,28 @@ func (o *Order) IsValidPaidStatusTransition(from, to PaidStatus) bool {
 	
 	return false
 }
+// Validate validates the order data
+func (o *Order) Validate() error {
+if o.CustomerID == uuid.Nil {
+return ErrInvalidCustomerID
+}
+
+if len(o.Items) == 0 {
+return ErrInvalidOrderData
+}
+
+if o.TotalAmount < 0 {
+return ErrInvalidAmount
+}
+
+for _, item := range o.Items {
+if item.Quantity <= 0 {
+return ErrInvalidQuantity
+}
+if item.UnitPrice < 0 {
+return ErrInvalidPrice
+}
+}
+
+return nil
+}

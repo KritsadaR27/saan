@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/saan-system/services/customer/internal/application"
-	"github.com/saan-system/services/customer/internal/transport/http/handler"
-	"github.com/saan-system/services/customer/internal/transport/http/middleware"
+	"customer/internal/application"
+	"customer/internal/transport/http/handler"
+	"customer/internal/transport/http/middleware"
 )
 
 // SetupRoutes sets up HTTP routes

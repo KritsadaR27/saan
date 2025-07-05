@@ -10,8 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/saan/order-service/internal/transport/http/middleware"
-	"github.com/saan/order-service/pkg/logger"
+	"order/internal/transport/http/middleware"
+	"order/pkg/logger"
 )
 
 // TestRBACMiddleware tests Role-Based Access Control middleware

@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"product-service/internal/domain/entity"
+	"product/internal/domain/entity"
+	"product/internal/infrastructure/config"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
@@ -20,11 +21,16 @@ type RedisCache struct {
 }
 
 // NewRedisCache creates a new Redis cache instance
-func NewRedisCache(host, port, password string, database int, logger *logrus.Logger) (*RedisCache, error) {
+func NewRedisCache(cfg config.RedisConfig, logger *logrus.Logger) (*RedisCache, error) {
 	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%s", host, port),
-		Password: password,
-		DB:       database,
+		Addr:         fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),
+		Password:     cfg.Password,
+		DB:           cfg.Database,
+		MaxRetries:   cfg.MaxRetries,
+		PoolSize:     cfg.PoolSize,
+		MinIdleConns: cfg.MinIdleConns,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
 	})
 
 	// Test connection
@@ -39,6 +45,20 @@ func NewRedisCache(host, port, password string, database int, logger *logrus.Log
 		client: client,
 		logger: logger,
 	}, nil
+}
+
+// NewRedisCacheSimple creates a new Redis cache instance with simple config (for backward compatibility)
+func NewRedisCacheSimple(host, port, password string, database int, logger *logrus.Logger) (*RedisCache, error) {
+	cfg := config.RedisConfig{
+		Host:         host,
+		Port:         port,
+		Password:     password,
+		Database:     database,
+		MaxRetries:   3,
+		PoolSize:     10,
+		MinIdleConns: 5,
+	}
+	return NewRedisCache(cfg, logger)
 }
 
 // Cache Keys following PROJECT_RULES.md patterns
@@ -124,7 +144,6 @@ func (r *RedisCache) Exists(ctx context.Context, key string) (bool, error) {
 // Batch operations
 func (r *RedisCache) SetBatch(ctx context.Context, items map[string]interface{}, ttl time.Duration) error {
 	pipe := r.client.Pipeline()
-	defer pipe.Close()
 
 	for key, value := range items {
 		data, err := json.Marshal(value)
@@ -145,7 +164,6 @@ func (r *RedisCache) SetBatch(ctx context.Context, items map[string]interface{},
 
 func (r *RedisCache) GetBatch(ctx context.Context, keys []string) (map[string]interface{}, error) {
 	pipe := r.client.Pipeline()
-	defer pipe.Close()
 
 	for _, key := range keys {
 		pipe.Get(ctx, key)
@@ -391,4 +409,14 @@ func (r *RedisCache) InvalidateProductList(ctx context.Context) error {
 // Close closes the Redis connection
 func (r *RedisCache) Close() error {
 	return r.client.Close()
+}
+
+// Health checks the Redis connection health
+func (r *RedisCache) Health(ctx context.Context) error {
+	return r.client.Ping(ctx).Err()
+}
+
+// GetClient returns the underlying Redis client (for advanced operations)
+func (r *RedisCache) GetClient() *redis.Client {
+	return r.client
 }

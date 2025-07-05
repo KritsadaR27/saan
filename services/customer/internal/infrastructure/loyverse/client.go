@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/saan-system/services/customer/internal/domain/entity"
-	"github.com/saan-system/services/customer/internal/domain/repository"
+	"customer/internal/domain/entity"
+	"customer/internal/domain/repository"
 )
 
 // loyverseClient implements repository.LoyverseClient

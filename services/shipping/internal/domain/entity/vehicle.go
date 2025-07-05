@@ -88,12 +88,8 @@ func (v *DeliveryVehicle) UpdateStatus(status VehicleStatus) {
 
 // UpdateLocation updates the vehicle's current location
 func (v *DeliveryVehicle) UpdateLocation(latitude, longitude float64) {
-	location := map[string]float64{
-		"latitude":  latitude,
-		"longitude": longitude,
-		"timestamp": float64(time.Now().Unix()),
-	}
-	// In real implementation, marshal this to JSON
+	// In a real implementation, this would update the vehicle's location in the database
+	// For now, we just update the timestamp
 	v.UpdatedAt = time.Now()
 }
 

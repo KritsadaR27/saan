@@ -9,12 +9,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"github.com/saan/chat-service/internal/config"
-	"github.com/saan/chat-service/internal/domain/entity"
-	"github.com/saan/chat-service/internal/domain/repository"
-	"github.com/saan/chat-service/internal/infrastructure/kafka"
-	"github.com/saan/chat-service/internal/infrastructure/redis"
-	"github.com/saan/chat-service/internal/infrastructure/websocket"
+	"chat/internal/config"
+	"chat/internal/domain/entity"
+	"chat/internal/domain/repository"
+	"chat/internal/infrastructure/kafka"
+	"chat/internal/infrastructure/redis"
+	"chat/internal/infrastructure/websocket"
 )
 
 // ChatService handles chat-related business logic

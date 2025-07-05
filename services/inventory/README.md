@@ -1,7 +1,7 @@
 # SaaN Inventory Service
 
 ## Overview
-The Inventory Service is a business intelligence layer that provides comprehensive inventory management APIs, analytics, and real-time updates for the SaaN system. It reads from cache data populated by the Loyverse integration and provides business logic for inventory operations.
+The Inventory Service is a comprehensive inventory management service following Clean Architecture principles. It provides inventory tracking, stock management, product lifecycle events, and analytics capabilities for the SaaN system.
 
 ## Architecture
 
@@ -16,38 +16,64 @@ The Inventory Service is a business intelligence layer that provides comprehensi
                     ┌─────────────▼───────────────┐
                     │    Inventory Service        │
                     │        (8082)               │
-                    │   Business Logic Layer      │
-                    └─────────────┬───────────────┘
-                                  │
-                    ┌─────────────▼───────────────┐
-                    │         Redis               │
-                    │    (Cache Layer)            │
-                    │   Populated by:             │
-                    │ integrations/loyverse       │
+                    │   Clean Architecture        │
+                    │                             │
+                    │  ┌─────────────────────┐   │
+                    │  │   HTTP Interface    │   │
+                    │  └─────────┬───────────┘   │
+                    │  ┌─────────▼───────────┐   │
+                    │  │   Application       │   │
+                    │  └─────────┬───────────┘   │
+                    │  ┌─────────▼───────────┐   │
+                    │  │     Domain          │   │
+                    │  └─────────┬───────────┘   │
+                    │  ┌─────────▼───────────┐   │
+                    │  │  Infrastructure     │   │
+                    │  │  • Database         │   │
+                    │  │  • Cache (Redis)    │   │
+                    │  │  • Events (Kafka)   │   │
+                    │  └─────────────────────┘   │
                     └─────────────────────────────┘
-```
+
+## Infrastructure (Clean Architecture)
+
+### Events System
+- **Kafka Publisher**: Publishes domain events to Kafka topics
+- **Kafka Consumer**: Consumes events from other services (Loyverse sync)
+- **Event Types**: Stock updates, product changes, sync events, alerts
+- **Noop Publisher**: For testing and development
+
+### Cache Layer
+- **Redis Client**: Enhanced caching with TTL and pattern operations
+- **Product Caching**: Individual products and product lists
+- **Stock Level Caching**: Real-time stock tracking
+- **Loyverse Integration**: Cache for Loyverse product data
+
+### Database
+- **PostgreSQL Connection**: Structured database configuration
+- **Product Management**: CRUD operations for products
+- **Stock Tracking**: Inventory levels and movements
 
 ## Key Features
 
-### 📊 Analytics & Business Intelligence
-- Real-time dashboard with key metrics
-- Product performance analysis
-- Category performance tracking
-- Daily/weekly trend analysis
-- Intelligent reorder suggestions
+### 📊 Event-Driven Architecture
+- Domain events for stock updates and product changes
+- Kafka integration for real-time synchronization
+- Event sourcing for audit trails
+- Loyverse synchronization events
 
 ### 🏪 Inventory Management
-- Product catalog with search capabilities
+- Product lifecycle management (create, update, delete)
 - Multi-store stock level tracking
 - Low stock alerts and notifications
-- Stock movement history
+- Real-time stock adjustments
 
 ### 🔄 Real-time Updates
-- WebSocket connections for live data
-- Kafka consumer for event processing
-- Automatic cache refresh
+- Event publishing for downstream services
+- Cache invalidation strategies
+- Automatic sync with Loyverse POS
 
-### 🔒 Security & Admin
+### 🔒 Configuration & Security
 - Admin authentication for sensitive operations
 - Rate limiting and CORS protection
 - Health checks and monitoring

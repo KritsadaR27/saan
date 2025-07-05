@@ -9,10 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 
-	"github.com/saan/chat-service/internal/application"
-	"github.com/saan/chat-service/internal/config"
-	"github.com/saan/chat-service/internal/domain/entity"
-	"github.com/saan/chat-service/internal/infrastructure/websocket"
+	"chat/internal/application"
+	"chat/internal/config"
+	"chat/internal/domain/entity"
+	"chat/internal/infrastructure/websocket"
 )
 
 // Handlers contains HTTP handlers for the chat service

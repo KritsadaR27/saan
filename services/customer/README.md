@@ -234,19 +234,22 @@ make lint
 
 ## Architecture
 
-The service follows Clean Architecture principles:
+The service follows Clean Architecture principles with a well-organized infrastructure layer:
 
 ```
 ├── cmd/                    # Application entry point
 ├── internal/
 │   ├── domain/            # Business logic and entities
+│   │   ├── entity/       # Domain entities
+│   │   └── repository/   # Repository interfaces
 │   ├── application/       # Use cases and services
-│   ├── infrastructure/    # External integrations
-│   │   ├── database/     # Database connections
-│   │   ├── repository/   # Data access layer
-│   │   ├── cache/        # Redis caching
-│   │   ├── messaging/    # Kafka events
-│   │   └── loyverse/     # Loyverse API client
+│   ├── infrastructure/    # Infrastructure layer (unified)
+│   │   ├── config/       # Configuration management
+│   │   ├── database/     # Database connections & repositories
+│   │   ├── cache/        # Redis cache implementation
+│   │   ├── events/       # Event streaming (Kafka, NoOp)
+│   │   ├── loyverse/     # External Loyverse integration
+│   │   └── external/     # Other external service integrations
 │   └── transport/
 │       └── http/         # HTTP handlers and routes
 ├── migrations/            # Database migrations

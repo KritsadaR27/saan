@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/saan/order-service/pkg/logger"
+	"order/pkg/logger"
 )
 
 // Role represents user roles in the system

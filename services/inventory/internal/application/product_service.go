@@ -7,18 +7,18 @@ import (
 	"fmt"
 	"time"
 
-	"services/inventory/internal/domain"
-	"services/inventory/internal/infrastructure/postgres"
+	"inventory/internal/domain"
+	"inventory/internal/infrastructure/database"
 
 	"github.com/sirupsen/logrus"
 )
 
 type ProductService struct {
-	conn   *postgres.Connection
+	conn   *database.Connection
 	logger *logrus.Logger
 }
 
-func NewProductService(conn *postgres.Connection, logger *logrus.Logger) *ProductService {
+func NewProductService(conn *database.Connection, logger *logrus.Logger) *ProductService {
 	return &ProductService{
 		conn:   conn,
 		logger: logger,

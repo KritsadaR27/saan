@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"product-service/internal/infrastructure/config"
+	"product/internal/infrastructure/config"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

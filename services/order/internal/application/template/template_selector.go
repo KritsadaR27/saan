@@ -1,8 +1,8 @@
 package template
 
 import (
-	"github.com/saan/order-service/internal/application/dto"
-	"github.com/saan/order-service/internal/domain"
+	"order/internal/application/dto"
+	"order/internal/domain"
 )
 
 // TemplateSelector selects appropriate message template based on order conditions

@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/saan/chat-service/internal/domain/entity"
+	"chat/internal/domain/entity"
 )
 
 // NewConnection creates a new database connection

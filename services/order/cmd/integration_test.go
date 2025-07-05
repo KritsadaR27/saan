@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/saan/order-service/internal/application"
-	"github.com/saan/order-service/internal/application/dto"
-	"github.com/saan/order-service/internal/domain"
-	"github.com/saan/order-service/internal/infrastructure/event"
-	"github.com/saan/order-service/pkg/logger"
+	"order/internal/application"
+	"order/internal/application/dto"
+	"order/internal/domain"
+	"order/internal/infrastructure/event"
+	"order/pkg/logger"
 )
 
 // MockEventRepository implements domain.OrderEventRepository for testing

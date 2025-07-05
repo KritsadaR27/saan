@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/saan-system/services/customer/internal/domain/entity"
-	"github.com/saan-system/services/customer/internal/domain/repository"
+	"customer/internal/domain/entity"
+	"customer/internal/domain/repository"
 )
 
 // Repository implementations as per SERVICE_ARCHITECTURE_GUIDE.md

@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"product-service/internal/application"
-	"product-service/internal/infrastructure/loyverse"
+	"product/internal/application"
+	"product/internal/infrastructure/loyverse"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"

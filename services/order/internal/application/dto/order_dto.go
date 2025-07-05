@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/saan/order-service/internal/domain"
+	"order/internal/domain"
 )
 
 // CreateOrderRequest represents the request to create a new order

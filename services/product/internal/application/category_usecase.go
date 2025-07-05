@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"product-service/internal/domain/entity"
-	"product-service/internal/domain/repository"
+	"product/internal/domain/entity"
+	"product/internal/domain/repository"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"

@@ -1,4 +1,4 @@
-module github.com/saan-system/services/customer
+module customer
 
 go 1.21
 

@@ -2,13 +2,13 @@ package main
 
 import (
 	"log"
-	"os"
 
-	"saan/shipping/internal/application"
-	"saan/shipping/internal/infrastructure/database"
-	"saan/shipping/internal/infrastructure/redis"
-	"saan/shipping/internal/infrastructure/kafka"
-	"saan/shipping/internal/transport/http"
+	"shipping/internal/infrastructure/config"
+	"shipping/internal/infrastructure/database"
+	"shipping/internal/infrastructure/cache"
+	"shipping/internal/infrastructure/events"
+	"shipping/internal/application"
+	"shipping/internal/transport/http"
 
 	"github.com/joho/godotenv"
 )
@@ -19,34 +19,60 @@ func main() {
 		log.Println("No .env file found, using system environment variables")
 	}
 
+	// Load configuration
+	cfg := config.Load()
+
 	// Initialize infrastructure
-	db, err := database.NewConnection()
+	db, err := database.NewConnection(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
 	defer db.Close()
 
-	redisClient := redis.NewClient()
-	defer redisClient.Close()
-
-	kafkaProducer := kafka.NewProducer()
-	defer kafkaProducer.Close()
-
-	// Initialize application services
-	shippingService := application.NewShippingService(db, redisClient, kafkaProducer)
-	routeService := application.NewRouteService(db, redisClient)
-	carrierService := application.NewCarrierService(db, redisClient)
-
-	// Initialize HTTP server
-	router := http.NewRouter(shippingService, routeService, carrierService)
-
-	port := os.Getenv("SERVER_PORT")
-	if port == "" {
-		port = "8086"
+	cacheClient, err := cache.NewRedisClient(cfg.RedisURL)
+	if err != nil {
+		log.Fatal("Failed to connect to Redis:", err)
 	}
 
-	log.Printf("🚚 Shipping Service starting on port %s", port)
-	if err := router.Run(":" + port); err != nil {
+	eventPublisher, err := events.NewKafkaProducer(cfg.KafkaBrokers, cfg.KafkaTopic, cfg.ServiceName)
+	if err != nil {
+		log.Fatal("Failed to connect to Kafka:", err)
+	}
+	defer eventPublisher.Close()
+
+	// Initialize repositories
+	deliveryRepo := database.NewDeliveryRepository(db)
+	vehicleRepo := database.NewVehicleRepository(db)
+	routeRepo := database.NewRouteRepository(db)
+	providerRepo := database.NewProviderRepository(db)
+	snapshotRepo := database.NewSnapshotRepository(db)
+	coverageRepo := database.NewCoverageAreaRepository(db)
+
+	// Initialize use cases (using correct constructor names)
+	deliveryUseCase := application.NewDeliveryUsecase(
+		deliveryRepo, vehicleRepo, routeRepo, providerRepo, 
+		snapshotRepo, coverageRepo, eventPublisher, cacheClient)
+	vehicleUseCase := application.NewVehicleUseCase(vehicleRepo, eventPublisher)
+
+	// Create placeholder use cases for compilation
+	providerUseCase := &application.ProviderUseCase{}
+	routingUseCase := &application.RoutingUseCase{}
+	trackingUseCase := &application.TrackingUseCase{}
+	coverageUseCase := &application.CoverageUseCase{}
+
+	// Initialize HTTP server
+	server := http.NewServer(
+		cfg.ServerPort,
+		deliveryUseCase,
+		vehicleUseCase,
+		providerUseCase,
+		routingUseCase,
+		trackingUseCase,
+		coverageUseCase,
+	)
+
+	log.Printf("🚚 Shipping Service starting on port %s", cfg.ServerPort)
+	if err := server.Start(); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
 }

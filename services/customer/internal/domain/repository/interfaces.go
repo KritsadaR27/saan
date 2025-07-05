@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/saan-system/services/customer/internal/domain/entity"
+	"customer/internal/domain/entity"
 	"github.com/google/uuid"
 )
 

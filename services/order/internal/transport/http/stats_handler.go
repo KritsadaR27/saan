@@ -8,9 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
-	"github.com/saan/order-service/internal/application"
-	"github.com/saan/order-service/internal/application/dto"
-	"github.com/saan/order-service/pkg/logger"
+	"order/internal/application"
+	"order/internal/application/dto"
+	"order/pkg/logger"
 )
 
 // StatsHandler handles HTTP requests for order statistics

@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"product-service/internal/application"
-	"product-service/internal/domain/entity"
-	"product-service/internal/domain/repository"
+	"product/internal/application"
+	"product/internal/domain/entity"
+	"product/internal/domain/repository"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"product-service/internal/application"
-	"product-service/internal/infrastructure/events"
+	"product/internal/application"
+	"product/internal/infrastructure/events"
 
 	"github.com/sirupsen/logrus"
 )

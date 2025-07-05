@@ -6,8 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/saan-system/services/customer/internal/application"
-	"github.com/saan-system/services/customer/internal/domain/entity"
+	"customer/internal/application"
+	"customer/internal/domain/entity"
 )
 
 // AddressHandler handles address HTTP requests

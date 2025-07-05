@@ -4,10 +4,11 @@ import (
 	"log"
 	"os"
 
-	"saan/finance/internal/application"
-	"saan/finance/internal/infrastructure/database"
-	"saan/finance/internal/infrastructure/cache"
-	"saan/finance/internal/transport/http"
+	"finance/internal/application"
+	"finance/internal/infrastructure/database"
+	"finance/internal/infrastructure/database/repositories"
+	"finance/internal/infrastructure/cache"
+	"finance/internal/transport/http"
 
 	"github.com/joho/godotenv"
 )
@@ -31,10 +32,13 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	// Initialize repositories
+	repos := repositories.NewRepositories(db)
+
 	// Initialize application services
-	financeService := application.NewFinanceService(db, redisClient)
-	allocationService := application.NewAllocationService(db, redisClient)
-	cashFlowService := application.NewCashFlowService(db, redisClient)
+	financeService := application.NewFinanceService(repos, redisClient)
+	allocationService := application.NewAllocationService(repos, redisClient)
+	cashFlowService := application.NewCashFlowService(repos, redisClient)
 
 	// Initialize HTTP server
 	router := http.NewRouter(financeService, allocationService, cashFlowService)

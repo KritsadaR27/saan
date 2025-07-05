@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"database/sql"
 	"time"
 	"github.com/google/uuid"
 )
@@ -147,12 +148,17 @@ type CashSummaryRepository interface {
 	GetByID(id uuid.UUID) (*DailyCashSummary, error)
 	GetByDateAndEntity(date time.Time, branchID, vehicleID *uuid.UUID) (*DailyCashSummary, error)
 	UpdateReconciliation(id uuid.UUID, reconciledBy uuid.UUID) error
+	Update(summary *DailyCashSummary) error
+	GetByDateRange(startDate, endDate time.Time, branchID, vehicleID *uuid.UUID) ([]*DailyCashSummary, error)
 }
 
 type AllocationRuleRepository interface {
 	GetActiveRule(branchID, vehicleID *uuid.UUID) (*ProfitAllocationRule, error)
 	Create(rule *ProfitAllocationRule) error
 	Update(rule *ProfitAllocationRule) error
+	DeactivateRule(id uuid.UUID, updatedBy uuid.UUID) error
+	GetByEntity(branchID, vehicleID *uuid.UUID) ([]*ProfitAllocationRule, error)
+	CreateWithTransaction(tx *sql.Tx, rule *ProfitAllocationRule) error
 }
 
 type TransferRepository interface {
@@ -161,17 +167,30 @@ type TransferRepository interface {
 	GetBatchByID(id uuid.UUID) (*CashTransferBatch, error)
 	GetTransfersByBatch(batchID uuid.UUID) ([]*CashTransfer, error)
 	UpdateTransferStatus(id uuid.UUID, status string) error
+	UpdateBatchStatus(id uuid.UUID, status string) error
+	GetTransferByID(id uuid.UUID) (*CashTransfer, error)
+	GetPendingBatches() ([]*CashTransferBatch, error)
 }
 
 type ExpenseRepository interface {
 	Create(expense *ExpenseEntry) error
 	GetBySummaryID(summaryID uuid.UUID) ([]*ExpenseEntry, error)
+	GetByID(id uuid.UUID) (*ExpenseEntry, error)
+	Update(expense *ExpenseEntry) error
+	Delete(id uuid.UUID) error
+	GetTotalBySummaryID(summaryID uuid.UUID) (float64, error)
+	GetByCategoryAndSummaryID(summaryID uuid.UUID, category string) ([]*ExpenseEntry, error)
 }
 
 type CashFlowRepository interface {
 	Create(record *CashFlowRecord) error
 	GetByEntity(entityType string, entityID uuid.UUID, limit int) ([]*CashFlowRecord, error)
 	GetCurrentBalance(entityType string, entityID uuid.UUID) (float64, error)
+	GetByID(id uuid.UUID) (*CashFlowRecord, error)
+	GetBalanceHistory(entityType string, entityID uuid.UUID, limit int) ([]*CashFlowRecord, error)
+	CalculateRunningBalance(entityType string, entityID uuid.UUID, transactionType CashFlowType, amount float64) (float64, error)
+	GetTotalInflows(entityType string, entityID uuid.UUID) (float64, error)
+	GetTotalOutflows(entityType string, entityID uuid.UUID) (float64, error)
 }
 
 // Service interfaces

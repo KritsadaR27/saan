@@ -1,4 +1,4 @@
-module services/inventory
+module inventory
 
 go 1.23.0
 
@@ -7,7 +7,6 @@ toolchain go1.24.3
 require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/gorilla/websocket v1.5.0
 	github.com/lib/pq v1.10.9
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/sirupsen/logrus v1.9.3
